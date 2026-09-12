@@ -43,7 +43,6 @@ The application is being developed incrementally, introducing technologies and a
 * **Docker multi-stage builds**
 * **Trivy vulnerability scanning**
 * **Kubernetes**
-* **Helm** *(in progress)*
 
 ## CI/CD
 
@@ -68,7 +67,6 @@ The application is being developed incrementally, introducing technologies and a
 * **Kubernetes DNS / service discovery**
 * **ConfigMaps**
 * **Secrets**
-* **Namespaces**
 * **Startup probes**
 * **Readiness probes**
 * **Liveness probes**
@@ -85,7 +83,6 @@ The application is being developed incrementally, introducing technologies and a
 * **Ingress**
 * **NGINX Ingress Controller**
 * **kubectl port-forward**
-* **Helm chart for deployment** *(in progress)*
 
 ---
 
@@ -1609,31 +1606,6 @@ This is one of the key differences between container-level networking and Kubern
 
 ---
 
-# 🗂️ Kubernetes Namespaces
-
-The project introduces Kubernetes **Namespaces** to logically isolate the application and its resources from other workloads and the cluster's default namespace.
-
-Namespaces provide:
-
-```text
-Logical isolation
-        ↓
-Separate scope for names, ConfigMaps, Secrets, Deployments, Services
-```
-
-The application's Deployments, Services, ConfigMaps and Secrets are scoped to a dedicated namespace rather than living in `default`.
-
-This mirrors how real-world clusters typically separate workloads (e.g. by team, environment, or application) and prepares the manifests for multi-environment deployments (`dev`, `staging`, `production`) later on.
-
-Resources can be inspected within the namespace using:
-
-```bash
-kubectl get pods -n climbing-management
-kubectl get all -n climbing-management
-```
-
----
-
 # ⚙️ Kubernetes ConfigMap
 
 Non-sensitive application configuration is stored in:
@@ -2208,32 +2180,6 @@ PostgreSQL is backed by persistent storage through a PVC.
 
 ---
 
-# ⎈ Helm
-
-The project is introducing a **Helm chart** to package and deploy the application to Kubernetes, replacing raw `kubectl apply` manifests with a templated, versioned release process.
-
-The chart is being built to deploy the application using the **immutable commit-SHA Docker image tags** published to GHCR during CI, rather than the mutable `latest` tag:
-
-```text
-GHCR image
-ghcr.io/rmarintech/climbing-management-sb:<commit-sha>
-        │
-        ▼
-   Helm values
-        │
-        ▼
-   Helm release
-        │
-        ▼
-Kubernetes Deployment
-```
-
-This keeps the deployed version traceable back to the exact commit that produced it, and is a step toward a repeatable, promotable release process (`helm upgrade`/`helm rollback`) instead of manually editing manifests.
-
-This is an **active, in-progress** area of the project — see the Roadmap below.
-
----
-
 # 🔄 CI/CD with GitHub Actions
 
 The project uses **GitHub Actions** to automate Continuous Integration and Continuous Delivery.
@@ -2460,8 +2406,6 @@ GitHub Actions
              GHCR
 ```
 
-The immutable commit-SHA tag is also the tag now being wired into the in-progress **Helm** chart, so Kubernetes deployments reference a precise, traceable image version.
-
 ---
 
 # 🚚 Continuous Delivery
@@ -2660,12 +2604,11 @@ The project is being developed progressively.
 * [x] NGINX Ingress Controller
 * [x] Ingress routing
 * [x] Local Ingress testing
-* [x] Kubernetes Namespaces
 
 ## Current
 
-* [ ] Helm chart for Kubernetes deployment
-* [ ] Helm deployment using immutable commit SHA images
+* [ ] Kubernetes namespaces
+* [ ] Helm
 
 ## Upcoming
 
@@ -2725,13 +2668,11 @@ Key areas include:
 * Kubernetes
 * Container orchestration
 * Service discovery
-* Namespaces
 * Persistent storage
 * Resource management
 * Horizontal autoscaling
 * Ingress and HTTP routing
 * Health probes
-* Helm packaging
 * Distributed systems
 * Messaging
 * Microservices
@@ -2763,7 +2704,6 @@ The project is also used as a practical learning environment for **Senior Backen
 
 * Docker Desktop with Kubernetes enabled
 * `kubectl`
-* `helm` *(for the in-progress Helm chart)*
 
 The recommended development approach is to run infrastructure and application components through Docker Compose or Kubernetes depending on the learning scenario.
 
@@ -2956,12 +2896,6 @@ Check rollout status:
 kubectl rollout status deployment/climbing-management
 ```
 
-Check namespace-scoped resources:
-
-```bash
-kubectl get all -n climbing-management
-```
-
 ---
 
 ## Kubernetes Local API Access
@@ -3137,4 +3071,4 @@ Backend Java Developer
 
 Technologies explored in this project include:
 
-`Java` · `Spring Boot` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Docker` · `Docker Compose` · `GitHub Actions` · `GitHub Container Registry` · `Kubernetes` · `Helm`
+`Java` · `Spring Boot` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Docker` · `Docker Compose` · `GitHub Actions` · `GitHub Container Registry` · `Kubernetes`
