@@ -1428,6 +1428,10 @@ The microservices evolution now demonstrates:
 - Failure isolation after retry exhaustion
 - Retry load amplification
 - Idempotency considerations
+- Circuit Breaker states: CLOSED, OPEN and HALF-OPEN
+- Fail-fast protection while a dependency is unhealthy
+- Circuit Breaker + `@Retryable` composition
+- Automatic recovery from OPEN to HALF-OPEN to CLOSED
 
 ---
 
@@ -1824,8 +1828,6 @@ no retry
 ```text
 Transient dependency failure
         ↓
-CourseServiceUnavailableException
-        ↓
 retry
         ↓
 dependency recovers
@@ -1836,24 +1838,26 @@ dependency recovers
 ```text
 Persistent dependency failure
         ↓
-initial attempt
+initial attempt + retries fail
         ↓
-retry #1
+Circuit OPEN
         ↓
-retry #2
-        ↓
-503 Service Unavailable
+new requests fail fast
 ```
 
-In failure situations where course validation never succeeds:
+After the OPEN period:
 
 ```text
-validation failure
-        ↓
-EnrollmentRepository.save() not executed
-        ↓
-Enrollment not persisted
+OPEN
+  ↓
+HALF-OPEN
+  ↓
+recovery probe
+  ├── success → CLOSED
+  └── failure → OPEN
 ```
+
+If validation never succeeds, `EnrollmentRepository.save()` is not executed and the enrollment is not persisted.
 
 ---
 
@@ -2378,193 +2382,436 @@ The important principle is:
 
 ---
 
-# 53. Next Resilience Topic — Circuit Breaker
+# 53. Circuit Breaker Motivation
 
 Timeouts and retries solve different problems:
 
 ```text
 Timeout
-   ↓
-do not wait indefinitely
+   → do not wait indefinitely
 
 Retry
-   ↓
-try again after a transient failure
-```
+   → try again after a transient failure
 
-But retries have a limitation.
-
-If the dependency is continuously unhealthy:
-
-```text
-Request
-   ↓
-failure
-   ↓
-retry
-   ↓
-failure
-   ↓
-retry
-   ↓
-failure
-```
-
-every incoming Enrollment request can still create multiple failing Course calls.
-
-The next resilience mechanism is therefore:
-
-```text
 Circuit Breaker
+   → stop making calls when repeated failures show that
+     a dependency is currently unhealthy
 ```
 
-A Circuit Breaker stops repeatedly calling a dependency that is already known to be failing.
+Without a Circuit Breaker, every new Enrollment request could repeat the same timeout and retry sequence against an unhealthy Course Service.
+
+A Circuit Breaker remembers failures and can temporarily stop calls to that dependency. Its main goals are to fail fast, reduce unnecessary network calls, protect resources, avoid retry amplification and help prevent cascading failures.
 
 ---
 
-# 54. Circuit Breaker
+# 54. Circuit Breaker States
 
-A Circuit Breaker commonly has three states:
+The Circuit Breaker has three important states:
 
 ```text
 CLOSED
   │
-  │ failures exceed threshold
+  │ failure
   ▼
 OPEN
   │
-  │ wait period
+  │ open period expires
   ▼
 HALF-OPEN
   │
   ├── success → CLOSED
-  │
   └── failure → OPEN
 ```
 
 ## CLOSED
 
-Normal state.
-
-```text
-Enrollment Service
-        │
-        ▼
-Course Service
-```
-
-Calls are allowed.
-
-Failures are monitored.
-
----
+Normal state. Calls to the Course Service are allowed and failures are monitored.
 
 ## OPEN
 
-Too many failures have occurred.
+The dependency is considered unhealthy. Calls are blocked before reaching `CourseClient`, so requests fail fast instead of waiting for another timeout and retry sequence.
 
-```text
-Enrollment Service
-        │
-        X
-Course Service
+## HALF-OPEN
+
+After the configured OPEN period, the next incoming request is allowed through as a recovery probe. If it succeeds, the circuit returns to `CLOSED`; if it fails, the circuit returns to `OPEN`.
+
+In this project, a HALF-OPEN probe is one logical call to `courseClient.courseExists(courseId)`. Because that method is `@Retryable`, one logical probe can still create up to three physical HTTP attempts.
+
+---
+
+# 55. Spring Cloud Circuit Breaker Dependency
+
+The Circuit Breaker is needed only by the Enrollment Service because that service owns the outbound Course Service call.
+
+The Enrollment Service imports the Spring Cloud BOM:
+
+```xml
+<properties>
+    <java.version>21</java.version>
+    <spring-cloud.version>2025.1.3</spring-cloud.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-dependencies</artifactId>
+            <version>${spring-cloud.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
 ```
 
-Calls are rejected without sending another network request to the failing dependency.
+and includes:
 
-This allows the caller to fail quickly and protects the dependency from repeated calls.
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-circuitbreaker-framework-retry</artifactId>
+</dependency>
+```
 
-It helps prevent:
+The root Course application does not need this dependency.
+
+---
+
+# 56. Circuit Breaker Configuration
+
+The Enrollment Service defines a named Circuit Breaker:
 
 ```text
-Repeated network calls
-        ↓
-Timeout waits
-        ↓
-Retry amplification
-        ↓
-Resource exhaustion
-        ↓
-Cascading failure
+courseService
+```
+
+Configuration:
+
+```java
+@Configuration
+public class CircuitBreakerConfiguration {
+
+    @Bean
+    public Customizer<FrameworkRetryCircuitBreakerFactory>
+            courseServiceCircuitBreakerCustomizer() {
+
+        return factory -> factory.configure(
+                builder -> builder
+                        .retryPolicy(RetryPolicy.withMaxRetries(0))
+                        .openTimeout(Duration.ofSeconds(10))
+                        .resetTimeout(Duration.ofSeconds(30))
+                        .build(),
+                "courseService"
+        );
+    }
+}
+```
+
+The relevant implementation package is:
+
+```java
+org.springframework.cloud.circuitbreaker.retry
+```
+
+Final learning configuration:
+
+```text
+Circuit Breaker name = courseService
+internal retries     = 0
+openTimeout          = 10 seconds
+resetTimeout         = 30 seconds
 ```
 
 ---
 
-## HALF-OPEN
+# 57. Why the Circuit Breaker Has Zero Internal Retries
 
-After a configured period, the Circuit Breaker allows a limited number of test requests.
+The Circuit Breaker itself uses:
+
+```java
+RetryPolicy.withMaxRetries(0)
+```
+
+because retry behavior already belongs to `CourseClient`:
+
+```java
+@Retryable(
+        includes = CourseServiceUnavailableException.class,
+        maxRetries = 2,
+        delay = 500
+)
+```
+
+The intended composition is:
+
+```text
+Circuit Breaker
+      ↓
+one logical Course validation
+      ↓
+CourseClient
+      ↓
+@Retryable
+      ├── attempt #1
+      ├── retry #1
+      └── retry #2
+```
+
+This avoids nested retry loops multiplying remote calls.
+
+---
+
+# 58. Wiring the Circuit Breaker
+
+`EnrollmentService` injects:
+
+```java
+private final CircuitBreakerFactory<?, ?> circuitBreakerFactory;
+```
+
+and wraps Course validation with the named circuit:
+
+```java
+CircuitBreaker circuitBreaker =
+        circuitBreakerFactory.create("courseService");
+
+boolean courseExists = circuitBreaker.run(
+        () -> courseClient.courseExists(enrollment.courseId())
+);
+```
+
+The runtime path is now:
+
+```text
+POST /enrollments
+        ↓
+EnrollmentController
+        ↓
+EnrollmentService
+        ↓
+Circuit Breaker "courseService"
+        ↓
+CourseClient
+        ↓
+@Retryable
+        ↓
+RestClient
+        ↓
+Course Service
+```
+
+---
+
+# 59. Circuit Breaker Failure Test
+
+The Course Service was intentionally stopped. The first Enrollment request was allowed through because the circuit initially started in `CLOSED`.
+
+The Course validation executed one initial attempt plus two retries. All attempts failed, so the logical Course validation failed and the circuit moved to `OPEN`.
+
+```text
+CLOSED
+  ↓
+logical Course validation fails
+  ↓
+OPEN
+```
+
+---
+
+# 60. Fail-Fast Test While OPEN
+
+Repeated POST requests were sent while the Course Service remained unavailable.
+
+Temporary logging in `CourseClient.courseExists()` showed that calls appeared only in groups approximately ten seconds apart. Requests sent between those groups did not reach `CourseClient`.
+
+This proved:
 
 ```text
 Circuit OPEN
       ↓
-wait
+new POST
       ↓
-HALF-OPEN
+CourseClient NOT called
       ↓
-test request
+fail fast
 ```
 
-If the dependency has recovered:
+---
+
+# 61. OPEN Timeout and HALF-OPEN Probe
+
+The configured:
+
+```java
+.openTimeout(Duration.ofSeconds(10))
+```
+
+was visible in the runtime behavior.
+
+After the circuit opened, calls were blocked for approximately ten seconds. The first incoming Enrollment request after that period became the HALF-OPEN recovery probe.
+
+The Circuit Breaker does not generate a request by itself. A real incoming request triggers the probe once the OPEN period has expired.
+
+---
+
+# 62. HALF-OPEN Failure Test
+
+While the Course Service was still unavailable:
+
+```text
+OPEN
+  ↓
+openTimeout expires
+  ↓
+HALF-OPEN
+  ↓
+logical Course validation
+  ↓
+attempt #1 + retry #1 + retry #2
+  ↓
+failure
+  ↓
+OPEN again
+```
+
+This behavior repeated while the dependency remained down.
+
+---
+
+# 63. HALF-OPEN Recovery Test
+
+The Course Service was then started again.
+
+After the OPEN period expired, the next incoming request became the HALF-OPEN probe.
 
 ```text
 HALF-OPEN
     ↓
-success
+CourseClient called
+    ↓
+first attempt succeeds
+    ↓
+no retry required
     ↓
 CLOSED
 ```
 
-If the dependency is still failing:
-
-```text
-HALF-OPEN
-    ↓
-failure
-    ↓
-OPEN
-```
-
-The next implementation milestone will add this behavior around the Course Service dependency.
+The enrollment was successfully created. This proved automatic recovery.
 
 ---
 
-# 55. Resilience Goal
+# 64. CLOSED State After Recovery
+
+After the successful HALF-OPEN probe, additional valid Enrollment requests were sent immediately.
+
+They succeeded without waiting for another OPEN timeout and required only one healthy Course validation call.
+
+This confirmed the complete lifecycle:
+
+```text
+CLOSED
+  ↓
+failure
+  ↓
+OPEN
+  ↓
+HALF-OPEN
+  ↓
+failure
+  ↓
+OPEN
+  ↓
+HALF-OPEN
+  ↓
+success
+  ↓
+CLOSED
+```
+
+---
+
+# 65. openTimeout vs resetTimeout
+
+The two configured values have different purposes.
+
+```java
+.openTimeout(Duration.ofSeconds(10))
+```
+
+controls how long the Circuit Breaker remains OPEN before a HALF-OPEN probe becomes possible.
+
+```java
+.resetTimeout(Duration.ofSeconds(30))
+```
+
+controls the quiet period related to resetting tracked failure state.
+
+They are not interchangeable. Keeping `resetTimeout` longer than `openTimeout` made the state transitions easier to observe during the learning experiment.
+
+---
+
+# 66. Timeout + Retry + Circuit Breaker
+
+The final resilience structure is:
+
+```text
+Enrollment request
+        ↓
+Circuit Breaker
+        ↓
+CourseClient
+        ↓
+@Retryable
+        ↓
+RestClient timeout
+        ↓
+Course Service
+```
+
+Each mechanism solves a different problem:
+
+```text
+Timeout
+   → bounds one remote attempt
+
+Retry
+   → retries a transient failure
+
+Circuit Breaker
+   → stops calls while the dependency is known to be unhealthy
+```
+
+Together they provide bounded waiting, controlled recovery attempts, fail-fast protection and automatic recovery testing.
+
+---
+
+# 67. Resilience Goal
 
 The objective of resilience is not to pretend failures do not happen.
 
-The goal is to:
+The goal is to detect failure, contain it, fail predictably, protect resources and recover automatically when possible.
+
+The resilience mechanisms implemented and tested in this course phase are:
 
 ```text
-Detect failure
-      ↓
-Contain failure
-      ↓
-Fail predictably
-      ↓
-Protect resources
-      ↓
-Recover automatically when possible
-```
-
-Microservices should be designed assuming:
-
-> Remote dependencies will eventually fail.
-
-The architecture must therefore define what happens when they do.
-
-The resilience mechanisms introduced so far are:
-
-```text
+Dependency failure translation ✅
+        ↓
 Timeouts ✅
-   ↓
+        ↓
 Retries ✅
-   ↓
-Circuit Breaker ← NEXT
+        ↓
+Circuit Breaker ✅
+        ↓
+Failure isolation ✅
+        ↓
+Automatic recovery ✅
 ```
+
+The resilience milestone is complete.
 
 ---
 
-# 56. Current Microservices Learning Position
+# 68. Current Microservices Learning Position
 
 Current progress:
 
@@ -2593,25 +2840,25 @@ Failure isolation
    ↓
 Recovery
    ↓
-Timeout configuration
+Timeouts
    ↓
-Slow dependency test
-   ↓
-Timeout handling
-   ↓
-Selective retry
-   ↓
-Transient failure recovery
-   ↓
-404 no-retry verification
+Selective retries
    ↓
 Retry exhaustion verification
    ↓
-Failure isolation with retries
+Circuit Breaker configuration
+   ↓
+OPEN fail-fast verification
+   ↓
+HALF-OPEN failure verification
+   ↓
+HALF-OPEN recovery verification
+   ↓
+CLOSED after recovery
+   ↓
+Resilience milestone complete
    ↓
 CURRENT POSITION
-   ↓
-Circuit Breaker
    ↓
 Independent containerization
    ↓

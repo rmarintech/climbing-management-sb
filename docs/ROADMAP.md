@@ -172,12 +172,19 @@ After a milestone:
 - [x] Identify service boundaries
 - [x] Define service responsibilities
 - [x] Extract first service
+- [x] Independent runtime
 - [x] Independent persistence
 - [x] Database-per-service ownership
 - [x] Inter-service REST communication
-- [ ] Independent deployment
+- [x] Remote dependency failure handling
 - [x] Failure isolation
-- [ ] Distributed-system trade-offs
+- [x] Timeouts
+- [x] Retries
+- [x] Circuit breakers
+- [x] Resilience and automatic recovery
+- [x] Distributed-system trade-offs
+- [ ] Independent containerization
+- [ ] Independent deployment
 
 ---
 
@@ -229,10 +236,6 @@ After a milestone:
 # 🔜 Advanced Backend Engineering
 
 - [ ] API versioning
-- [x] Timeouts
-- [x] Retries
-- [ ] Circuit breakers
-- [ ] Resilience
 - [ ] Distributed tracing
 - [ ] Observability
 - [ ] Performance
@@ -261,35 +264,57 @@ After a milestone:
 # Current Position
 
 ```text
-Java / Spring Boot          ✅
+Java / Spring Boot              ✅
         ↓
-PostgreSQL / JPA            ✅
+PostgreSQL / JPA                ✅
         ↓
-Transactions / Locking      ✅
+Transactions / Locking          ✅
         ↓
-MongoDB                     ✅
+MongoDB                         ✅
         ↓
-Docker                      ✅
+Docker                          ✅
         ↓
-CI/CD                       ✅
+CI/CD                           ✅
         ↓
-Kubernetes                  ✅
+Kubernetes                      ✅
         ↓
-Namespaces                  ✅
+Namespaces                      ✅
         ↓
-Helm                        ✅
+Helm                            ✅
         ↓
-Microservices               🚧 CURRENT
+Microservice extraction         ✅
         ↓
-Kafka                       ⏳
+Independent persistence         ✅
         ↓
-DDD / Hexagonal             ⏳
+REST communication              ✅
         ↓
-Security                    ⏳
+Failure isolation               ✅
         ↓
-Testing                     ⏳
+Timeouts                        ✅
         ↓
-System Design               ⏳
+Retries                         ✅
+        ↓
+Circuit Breaker                 ✅
+        ↓
+Resilience                      ✅
+        ↓
+Distributed-system trade-offs   ✅
+        ↓
+Independent containerization    🚧 CURRENT
+        ↓
+Independent deployment          ⏳
+        ↓
+Kafka                           ⏳
+        ↓
+DDD / Hexagonal                 ⏳
+        ↓
+Security                        ⏳
+        ↓
+Testing                         ⏳
+        ↓
+Advanced Backend Engineering    ⏳
+        ↓
+System Design                   ⏳
 ```
 
 ---

@@ -5,23 +5,25 @@ import com.rubenmarin.enrollmentservice.document.EnrollmentDocument;
 import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
 import com.rubenmarin.enrollmentservice.model.Enrollment;
 import com.rubenmarin.enrollmentservice.repository.EnrollmentRepository;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class EnrollmentService {
 
     private final EnrollmentRepository enrollmentRepository;
     private final CourseClient courseClient;
+    private final CircuitBreakerFactory<?, ?> circuitBreakerFactory;
 
     public EnrollmentService(EnrollmentRepository enrollmentRepository,
-                             CourseClient courseClient) {
+                             CourseClient courseClient,
+                             CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
 
         this.enrollmentRepository = enrollmentRepository;
         this.courseClient = courseClient;
+        this.circuitBreakerFactory = circuitBreakerFactory;
     }
 
     public List<Enrollment> findAll() {
@@ -30,7 +32,14 @@ public class EnrollmentService {
 
     public Enrollment create(Enrollment enrollment) {
 
-        if (!courseClient.courseExists(enrollment.courseId())) {
+        /** CircuitBreaker**/
+        // Spring Cloud’s CircuitBreakerFactory.create("...").run(...) API
+        // is the standard way to wrap code with the configured circuit breaker
+        // The "courseService" name is important because it matches the configuration you created:
+        CircuitBreaker circuitBreaker = circuitBreakerFactory.create("courseService");
+        boolean courseExists = circuitBreaker.run(() -> courseClient.courseExists(enrollment.courseId()));
+
+        if (!courseExists) {
             throw new CourseNotFoundException(enrollment.courseId());
         }
 
