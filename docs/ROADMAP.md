@@ -164,9 +164,7 @@ After a milestone:
 - [x] Uninstall
 - [x] Namespace-aware deployment
 
----
-
-# 🚧 Current — Microservices
+## Microservices
 
 - [x] Monolith vs microservices
 - [x] Identify service boundaries
@@ -184,11 +182,14 @@ After a milestone:
 - [x] Resilience and automatic recovery
 - [x] Distributed-system trade-offs
 - [x] Independent containerization
-- [ ] Independent deployment
+- [x] Independent Kubernetes deployment
+- [x] Independent Docker images
+- [x] Independent GHCR packages
+- [x] Independent deployment
 
 ---
 
-# 🔜 Event-Driven Architecture
+# 🚧 Current — Event-Driven Architecture
 
 - [ ] Synchronous vs asynchronous
 - [ ] Apache Kafka
@@ -302,9 +303,15 @@ Distributed-system trade-offs   ✅
         ↓
 Independent containerization    ✅
         ↓
-Independent deployment          🚧 CURRENT
+Independent K8s deployment      ✅
         ↓
-Kafka                           ⏳
+Independent GHCR images         ✅
+        ↓
+Independent deployment          ✅
+        ↓
+Microservices                   ✅ COMPLETE
+        ↓
+Kafka / Event-Driven            🚧 CURRENT
         ↓
 DDD / Hexagonal                 ⏳
         ↓
@@ -315,8 +322,3 @@ Testing                         ⏳
 Advanced Backend Engineering    ⏳
         ↓
 System Design                   ⏳
-```
-
----
-
-[Back to README](../README.md)

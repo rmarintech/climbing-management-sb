@@ -31,6 +31,9 @@ spec:
 
           # Image published by our GitHub Actions CI pipeline.
           image: ghcr.io/rmarintech/climbing-management-sb:latest
+          #image: ghcr.io/rmarintech/climbing-management-sb:<commit-sha>
+          imagePullPolicy: Always
+          #imagePullPolicy: IfNotPresent
 
           ports:
             - containerPort: 8080

@@ -23,9 +23,10 @@ spec:
       containers:
         - name: enrollment-service
 
-          image: enrollment-service:local
-
-          imagePullPolicy: IfNotPresent
+          #image: enrollment-service:local
+          image: ghcr.io/rmarintech/climbing-management-sb-enrollment-service:latest
+          imagePullPolicy: Always
+          #imagePullPolicy: IfNotPresent
 
           ports:
             - containerPort: 8081

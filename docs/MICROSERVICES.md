@@ -3462,9 +3462,852 @@ The remaining microservices milestone is to create an independent deployment bou
 
 ---
 
-# 79. Current Microservices Learning Position
+# 79. Independent Kubernetes Deployment
 
-Current progress:
+After completing independent containerization, the Enrollment Service was deployed as its own Kubernetes workload.
+
+The Kubernetes architecture now contains independent workloads for both applications:
+
+```text
+Kubernetes
+│
+├── Course Deployment
+│   └── Course Pods
+│
+├── climbing-management-service
+│
+├── Enrollment Deployment
+│   └── Enrollment Pod
+│
+├── enrollment-service
+│
+├── PostgreSQL
+│
+└── MongoDB
+```
+
+The Enrollment Service therefore has its own:
+
+- Kubernetes `Deployment`
+- Kubernetes `Service`
+- Kubernetes `ConfigMap`
+- Pod lifecycle
+- Docker image
+- GHCR package
+- runtime configuration
+- deployment boundary
+
+This completes the transition from:
+
+```text
+Separate Spring Boot application
+```
+
+to:
+
+```text
+Separately deployable microservice
+```
+
+---
+
+# 80. Enrollment Kubernetes ConfigMap
+
+Non-sensitive Enrollment configuration is stored in:
+
+```text
+enrollment-service-config
+```
+
+Example:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: enrollment-service-config
+
+data:
+  APP_NAME: enrollment-service
+  LOG_LEVEL: INFO
+
+  ENROLLMENT_MONGO_DB: enrollment_management
+  COURSE_SERVICE_BASE_URL: http://climbing-management-service:9090
+```
+
+The Course Service address is now:
+
+```text
+http://climbing-management-service:9090
+```
+
+instead of the Docker Compose address:
+
+```text
+http://app:8080
+```
+
+This demonstrates that service discovery depends on the deployment environment.
+
+```text
+Docker Compose
+    ↓
+app:8080
+
+Kubernetes
+    ↓
+climbing-management-service:9090
+```
+
+---
+
+# 81. Enrollment Kubernetes Deployment
+
+The Enrollment Service is deployed independently with its own Kubernetes `Deployment`.
+
+Conceptually:
+
+```text
+Deployment
+    ↓
+ReplicaSet
+    ↓
+Enrollment Pod
+    ↓
+Enrollment container
+```
+
+The Deployment injects non-sensitive configuration using:
+
+```yaml
+envFrom:
+  - configMapRef:
+      name: enrollment-service-config
+```
+
+The Spring profile is activated with:
+
+```yaml
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: docker
+```
+
+The application itself continues listening on:
+
+```text
+8081
+```
+
+inside the Pod.
+
+The pod template uses stable labels such as:
+
+```yaml
+labels:
+  app: enrollment-service
+  deployment: manual
+```
+
+These labels are then used by the Kubernetes Service selector.
+
+---
+
+# 82. Enrollment Kubernetes Service
+
+The Enrollment Service has its own `ClusterIP` Service.
+
+```text
+enrollment-service:9091
+        ↓
+targetPort: 8081
+        ↓
+Enrollment Pod:8081
+```
+
+Conceptually:
+
+```text
+Client inside cluster
+        ↓
+enrollment-service:9091
+        ↓
+Kubernetes Service
+        ↓
+Enrollment Pod:8081
+```
+
+The Service provides a stable network identity even if the Pod is replaced.
+
+Example:
+
+```yaml
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: enrollment-service
+
+spec:
+  selector:
+    app: enrollment-service
+    deployment: manual
+
+  ports:
+    - protocol: TCP
+      port: 9091
+      targetPort: 8081
+
+  type: ClusterIP
+```
+
+---
+
+# 83. Kubernetes Service Selector Isolation
+
+During deployment, an important Kubernetes issue was discovered.
+
+The original Course Service selected only:
+
+```yaml
+selector:
+  app: climbing-management
+```
+
+However, multiple Deployments shared that same label:
+
+```text
+manual Course Deployment
+Helm development Deployment
+Helm production Deployment
+```
+
+As a result, the Service initially routed traffic to Pods from multiple deployments.
+
+The Service originally had four endpoints.
+
+A stable additional label was introduced for the manually managed workload:
+
+```yaml
+deployment: manual
+```
+
+The manual Course Pods now contain:
+
+```yaml
+labels:
+  app: climbing-management
+  deployment: manual
+```
+
+and the manual Course Service selects:
+
+```yaml
+selector:
+  app: climbing-management
+  deployment: manual
+```
+
+The result became:
+
+```text
+Before
+climbing-management-service
+        ↓
+4 Pods
+        ↓
+manual + dev + prod
+```
+
+then:
+
+```text
+After
+climbing-management-service
+        ↓
+2 manual Course Pods only
+```
+
+This demonstrated an important Kubernetes principle:
+
+> Service selectors must uniquely identify the intended workload.
+
+Generated labels such as:
+
+```text
+pod-template-hash
+```
+
+must not be used for this purpose because they change whenever Kubernetes creates a new ReplicaSet.
+
+---
+
+# 84. EndpointSlice Verification
+
+Service routing was verified using `EndpointSlice`.
+
+For the Course Service:
+
+```powershell
+kubectl get endpointslice `
+  -l kubernetes.io/service-name=climbing-management-service
+```
+
+For the Enrollment Service:
+
+```powershell
+kubectl get endpointslice `
+  -l kubernetes.io/service-name=enrollment-service
+```
+
+The Enrollment Service resolved to its Enrollment Pod endpoint:
+
+```text
+enrollment-service:9091
+        ↓
+EndpointSlice
+        ↓
+Enrollment Pod IP:8081
+```
+
+This confirmed:
+
+```text
+Service selector
+        ↓
+EndpointSlice
+        ↓
+correct Pod IP
+```
+
+---
+
+# 85. Docker vs Kubernetes Host Ports
+
+Docker Compose and Kubernetes were deliberately exposed through different local ports to make testing unambiguous.
+
+```text
+Docker Compose
+├── Course      → localhost:8080
+└── Enrollment  → localhost:8081
+
+Kubernetes
+├── Course      → localhost:9090
+└── Enrollment  → localhost:9091
+```
+
+Kubernetes access is created locally with:
+
+```powershell
+kubectl port-forward service/climbing-management-service 9090:9090
+```
+
+and:
+
+```powershell
+kubectl port-forward service/enrollment-service 9091:9091
+```
+
+This allows both environments to run simultaneously while making it clear which infrastructure is being tested.
+
+For example:
+
+```powershell
+Invoke-RestMethod http://localhost:8081/enrollments
+```
+
+tests Docker Compose.
+
+While:
+
+```powershell
+Invoke-RestMethod http://localhost:9091/enrollments
+```
+
+tests Kubernetes.
+
+The same distinction applies to the Course API:
+
+```text
+Docker
+    ↓
+http://localhost:8080/jpa/courses
+
+Kubernetes
+    ↓
+http://localhost:9090/jpa/courses
+```
+
+---
+
+# 86. ClusterIP vs Port Forwarding
+
+The Kubernetes Services remain:
+
+```yaml
+type: ClusterIP
+```
+
+A `ClusterIP` Service is reachable inside the Kubernetes cluster, but it is not directly exposed on a Windows host port.
+
+Therefore:
+
+```text
+Kubernetes Service :9091
+        ≠
+Windows localhost:9091
+```
+
+until a port-forward is created:
+
+```powershell
+kubectl port-forward service/enrollment-service 9091:9091
+```
+
+The resulting path is:
+
+```text
+Windows localhost:9091
+        ↓
+kubectl port-forward
+        ↓
+Kubernetes Service :9091
+        ↓
+Enrollment Pod :8081
+```
+
+This is different from Docker Compose port publishing:
+
+```yaml
+ports:
+  - "8081:8081"
+```
+
+which maps a Docker container port directly to a Windows host port.
+
+---
+
+# 87. Kubernetes End-to-End Test
+
+The complete Kubernetes microservice flow was successfully tested.
+
+A request was sent through the Kubernetes Enrollment Service:
+
+```text
+Windows
+    ↓
+localhost:9091
+    ↓
+kubectl port-forward
+    ↓
+enrollment-service:9091
+    ↓
+Enrollment Pod:8081
+```
+
+The Enrollment Pod then validated the Course through Kubernetes DNS:
+
+```text
+Enrollment Pod
+    ↓
+climbing-management-service:9090
+    ↓
+Course Service
+    ↓
+Course Pod:8080
+```
+
+After successful validation, the Enrollment Service persisted the enrollment through:
+
+```text
+Enrollment Pod
+    ↓
+mongo:27017
+    ↓
+MongoDB Service
+    ↓
+MongoDB Pod
+```
+
+A successful enrollment was created with:
+
+```text
+studentName = Kubernetes Test
+```
+
+This proved that the earlier Docker container-to-container communication had evolved into real Kubernetes service-to-service communication.
+
+---
+
+# 88. Docker and Kubernetes Use Different Data Environments
+
+During testing, another important infrastructure distinction became visible.
+
+Docker Compose and Kubernetes run separate database workloads and storage.
+
+Conceptually:
+
+```text
+Docker Compose
+│
+├── PostgreSQL container
+│   └── Docker volume
+│
+└── MongoDB container
+    └── Docker volume
+```
+
+while:
+
+```text
+Kubernetes
+│
+├── PostgreSQL Pod
+│   └── Kubernetes persistent storage
+│
+└── MongoDB Pod
+    └── Kubernetes storage
+```
+
+Therefore a Course that exists in Docker PostgreSQL does not automatically exist in Kubernetes PostgreSQL.
+
+Likewise, an Enrollment stored through Docker does not automatically appear in the Kubernetes MongoDB environment.
+
+This is why testing through distinct host ports is useful:
+
+```text
+8080 / 8081
+    ↓
+Docker data
+
+9090 / 9091
+    ↓
+Kubernetes data
+```
+
+---
+
+# 89. Independent GHCR Images
+
+Both applications are now published independently by GitHub Actions.
+
+The Course application image is:
+
+```text
+ghcr.io/rmarintech/climbing-management-sb
+```
+
+The Enrollment Service image is:
+
+```text
+ghcr.io/rmarintech/climbing-management-sb-enrollment-service
+```
+
+Therefore:
+
+```text
+One Git repository
+        ↓
+One CI workflow
+        ↓
+┌──────────────────────────┐
+│                          │
+▼                          ▼
+Course image          Enrollment image
+│                          │
+▼                          ▼
+GHCR package          GHCR package
+```
+
+The two services share a repository but produce separate deployable artifacts.
+
+This is an important distinction:
+
+```text
+Monorepo
+    ≠
+single deployment artifact
+```
+
+---
+
+# 90. CI Image Publishing
+
+GitHub Actions now builds and publishes both Docker images.
+
+```text
+Git push
+    ↓
+GitHub Actions
+    ↓
+Build/test Course
+    ↓
+Build/test Enrollment
+    ↓
+Upload Course JAR
+    ↓
+Upload Enrollment JAR
+    ↓
+Login to GHCR
+    ↓
+Build Course image
+    ↓
+Push Course image
+    ↓
+Build Enrollment image
+    ↓
+Push Enrollment image
+```
+
+The Enrollment image is built from:
+
+```text
+services/enrollment-service/Dockerfile
+```
+
+and published as:
+
+```text
+ghcr.io/rmarintech/climbing-management-sb-enrollment-service
+```
+
+The pipeline publishes both:
+
+```text
+:latest
+```
+
+and:
+
+```text
+:<commit-sha>
+```
+
+tags.
+
+This means both applications now have independent registry artifacts even though they are built from the same Git repository.
+
+---
+
+# 91. Current Image Strategy
+
+The current manual Kubernetes Deployments use:
+
+```text
+:latest
+```
+
+for convenience during development and learning.
+
+For Course:
+
+```yaml
+image: ghcr.io/rmarintech/climbing-management-sb:latest
+imagePullPolicy: Always
+```
+
+For Enrollment:
+
+```yaml
+image: ghcr.io/rmarintech/climbing-management-sb-enrollment-service:latest
+imagePullPolicy: Always
+```
+
+Using:
+
+```yaml
+imagePullPolicy: Always
+```
+
+ensures Kubernetes checks the registry when creating a new Pod instead of relying only on an older cached `latest` image.
+
+The CI pipeline also publishes immutable commit-SHA tags.
+
+For production-oriented deployments, the preferred strategy remains:
+
+```text
+:<commit-sha>
+```
+
+because it provides:
+
+- reproducibility
+- traceability
+- predictable rollback
+- exact correspondence between source code and deployed image
+
+Using `latest` here is therefore a deliberate learning/development choice, not the final production recommendation.
+
+---
+
+# 92. Kubernetes Rollout
+
+Changing a Deployment image causes Kubernetes to perform a rolling update.
+
+```text
+Deployment changes
+        ↓
+new ReplicaSet
+        ↓
+new Pods created
+        ↓
+readiness checks
+        ↓
+old Pods removed
+        ↓
+new version active
+```
+
+The rollout can be monitored using:
+
+```powershell
+kubectl rollout status deployment/climbing-management
+```
+
+and:
+
+```powershell
+kubectl rollout status deployment/enrollment-service
+```
+
+A successful rollout confirms that the new Pods became Ready.
+
+Rollout history can be inspected with:
+
+```powershell
+kubectl rollout history deployment/climbing-management
+```
+
+and a deployment can be rolled back using:
+
+```powershell
+kubectl rollout undo deployment/climbing-management
+```
+
+This demonstrates that:
+
+```text
+kubectl apply
+    ↓
+changes desired state
+
+kubectl rollout
+    ↓
+observes/manages transition to that state
+```
+
+During this milestone, an invalid image reference produced:
+
+```text
+InvalidImageName
+```
+
+and the new ReplicaSet could not become Ready.
+
+The older healthy Course Pods remained running while the failed rollout was investigated.
+
+That demonstrated another benefit of a rolling Deployment:
+
+> A failed new version does not necessarily remove the previously healthy version.
+
+---
+
+# 93. Independent Deployment Completed
+
+The Enrollment Service now has the complete independent deployment chain:
+
+```text
+Enrollment source code
+        ↓
+independent Maven build
+        ↓
+independent Dockerfile
+        ↓
+independent Docker image
+        ↓
+GitHub Actions
+        ↓
+independent GHCR package
+        ↓
+Kubernetes Deployment
+        ↓
+Enrollment Pod
+        ↓
+Kubernetes Service
+```
+
+The Course application and Enrollment Service now share the same repository while maintaining independent runtime and deployment boundaries.
+
+```text
+Monorepo
+│
+├── Course application
+│      ↓
+│   Course image
+│      ↓
+│   Course Deployment
+│
+└── Enrollment Service
+       ↓
+    Enrollment image
+       ↓
+    Enrollment Deployment
+```
+
+The microservices milestone is therefore complete.
+
+---
+
+# 94. Final Microservices Architecture
+
+```text
+                         Client
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+      Course Service              Enrollment Service
+        Kubernetes                   Kubernetes
+         Service                      Service
+             │                           │
+             ▼                           ▼
+        Course Pods               Enrollment Pod
+             ▲                           │
+             │                           │ HTTP
+             └───────────────────────────┘
+                 Course validation
+
+Course Pods                         Enrollment Pod
+    │                                    │
+    ▼                                    ▼
+PostgreSQL                            MongoDB
+Course-owned data                Enrollment-owned data
+```
+
+The architecture now demonstrates:
+
+```text
+Independent application       ✅
+Independent runtime           ✅
+Independent persistence       ✅
+Independent API               ✅
+Independent Docker image      ✅
+Independent GHCR package      ✅
+Independent K8s Deployment    ✅
+Independent K8s Service       ✅
+Service discovery             ✅
+Failure isolation             ✅
+Timeouts                      ✅
+Retries                       ✅
+Circuit Breaker               ✅
+Automatic recovery            ✅
+Independent deployment        ✅
+```
+
+---
+
+# 95. Current Microservices Learning Position
 
 ```text
 Monolith
@@ -3481,55 +4324,49 @@ Database ownership
    ↓
 REST communication
    ↓
-Remote validation
-   ↓
-Business error translation
-   ↓
-Dependency failure handling
-   ↓
-Failure isolation
-   ↓
-Recovery
+Failure handling
    ↓
 Timeouts
    ↓
-Selective retries
+Retries
    ↓
-Retry exhaustion verification
+Circuit Breaker
    ↓
-Circuit Breaker configuration
+Resilience
    ↓
-OPEN fail-fast verification
-   ↓
-HALF-OPEN failure verification
-   ↓
-HALF-OPEN recovery verification
-   ↓
-CLOSED after recovery
-   ↓
-Resilience milestone complete
-   ↓
-Independent containerization ✅
-   ↓
-CURRENT POSITION
+Independent containerization
    ↓
 Independent Kubernetes deployment
+   ↓
+Independent GHCR image
+   ↓
+Independent deployment
+   ↓
+MICROSERVICES COMPLETE ✅
+   ↓
+Kafka / Event-Driven Architecture 🚧 NEXT
 ```
 
-The next step is:
+The next course phase is:
 
 ```text
-Enrollment Service
+Synchronous communication
         ↓
-independent Kubernetes resources
+Asynchronous communication
         ↓
-Deployment
+Apache Kafka
         ↓
-Service
+Producers
         ↓
-configuration
+Consumers
         ↓
-independent deployment
+Consumer groups
+        ↓
+Event contracts
+        ↓
+Retry strategy
+        ↓
+Idempotency
 ```
 
 ---
