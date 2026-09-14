@@ -229,7 +229,7 @@ After a milestone:
 # 🔜 Advanced Backend Engineering
 
 - [ ] API versioning
-- [ ] Timeouts
+- [x] Timeouts
 - [ ] Retries
 - [ ] Circuit breakers
 - [ ] Resilience

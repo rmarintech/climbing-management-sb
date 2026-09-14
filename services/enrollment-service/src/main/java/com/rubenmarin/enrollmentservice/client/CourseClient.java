@@ -2,9 +2,13 @@ package com.rubenmarin.enrollmentservice.client;
 
 import com.rubenmarin.enrollmentservice.exception.CourseServiceUnavailableException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 @Component
 public class CourseClient {
@@ -15,8 +19,20 @@ public class CourseClient {
             RestClient.Builder builder,
             @Value("${course-service.base-url}") String baseUrl) {
 
+
+       //  connect timeout = 2s
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+
+        // read timeout    = 2s
+        requestFactory.setReadTimeout(Duration.ofSeconds(2));
+
         this.restClient = builder
                 .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
                 .build();
     }
 

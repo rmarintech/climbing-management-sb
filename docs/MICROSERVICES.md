@@ -965,27 +965,27 @@ Conceptually:
 ```java
 try {
 
-    return restClient.get()
+        return restClient.get()
             .uri(...)
             .exchange((request, response) -> {
 
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    return true;
-                }
+        if (response.getStatusCode().is2xxSuccessful()) {
+        return true;
+        }
 
-                if (response.getStatusCode().value() == 404) {
-                    return false;
-                }
+        if (response.getStatusCode().value() == 404) {
+        return false;
+        }
 
-                throw new IllegalStateException(
+        throw new IllegalStateException(
                         "Unexpected response from Course Service: "
                                 + response.getStatusCode()
                 );
-            });
+                        });
 
-} catch (ResourceAccessException exception) {
+                        } catch (ResourceAccessException exception) {
 
-    throw new CourseServiceUnavailableException(exception);
+        throw new CourseServiceUnavailableException(exception);
 }
 ```
 
@@ -1088,7 +1088,7 @@ public Map<String, Object> handleCourseServiceUnavailable(
 }
 ```
 
-The API response is now:
+The API response is:
 
 ```json
 {
@@ -1104,13 +1104,14 @@ This exposes a stable API contract instead of implementation-specific networking
 
 # 28. Current Failure Matrix
 
-The Enrollment API now distinguishes between three important outcomes:
+The Enrollment API now distinguishes between four important outcomes:
 
 | Situation | Result |
 | --- | --- |
 | Course exists | `201 Created` |
 | Course does not exist | `404 Not Found` |
 | Course Service unavailable | `503 Service Unavailable` |
+| Course Service too slow | `503 Service Unavailable` |
 
 Conceptually:
 
@@ -1134,7 +1135,15 @@ CourseClient
         │     ↓
         │ 404
         │
-        └── connection failure
+        ├── connection failure
+        │     ↓
+        │ CourseServiceUnavailableException
+        │     ↓
+        │ 503
+        │
+        └── timeout
+              ↓
+        ResourceAccessException
               ↓
         CourseServiceUnavailableException
               ↓
@@ -1237,15 +1246,6 @@ A new request was sent:
 ```
 
 The enrollment was successfully persisted.
-
-The collection then contained:
-
-```json
-{
-  "courseId": 1,
-  "studentName": "Recovery Test"
-}
-```
 
 This proves:
 
@@ -1377,7 +1377,7 @@ This is why distributed applications need resilience mechanisms.
       ▼                ▼
    continue     CourseNotFoundException
 
-connection failure
+connection failure / timeout
       │
       ▼
 ResourceAccessException
@@ -1414,36 +1414,21 @@ The microservices evolution now demonstrates:
 - `503 Service Unavailable`
 - Failure isolation
 - Recovery after dependency restoration
+- Connect timeout configuration
+- Read timeout configuration
+- Slow dependency simulation
+- Timeout failure handling
+- No persistence after timeout
 
 ---
 
-# 36. Next Resilience Topics
+# 36. Timeout Handling
 
-The next distributed-system topics are:
+A remote service can be running and reachable while still responding too slowly.
 
-```text
-Timeouts
-   ↓
-Retries
-   ↓
-Circuit Breaker
-```
+This is dangerous because the calling service may continue waiting for the dependency.
 
-## Timeout
-
-Prevents the Enrollment Service from waiting indefinitely for the Course Service.
-
-```text
-Course Service too slow
-        ↓
-timeout
-        ↓
-fail fast
-```
-
-A remote call should not be allowed to block indefinitely.
-
-Without a timeout:
+Without a bounded timeout:
 
 ```text
 Enrollment request
@@ -1452,19 +1437,450 @@ Enrollment request
 Course Service slow
         │
         ▼
-Thread waits
+request thread waits
         │
         ▼
-More requests arrive
+more requests arrive
         │
         ▼
-More threads wait
+more threads wait
         │
         ▼
-Enrollment Service can become overloaded
+resource exhaustion
 ```
 
-Timeouts help contain this problem.
+Therefore remote calls should have explicit time limits.
+
+---
+
+## Connect Timeout
+
+The **connect timeout** defines how long the client is willing to wait while establishing a network connection.
+
+```text
+Enrollment Service
+        │
+        ▼
+attempt connection
+        │
+        X
+connection cannot be established
+        │
+        ▼
+connect timeout / connection failure
+```
+
+The Enrollment Service currently uses:
+
+```text
+connect timeout = 2 seconds
+```
+
+---
+
+## Read Timeout
+
+The **read timeout** defines how long the client waits for the remote service to return data after the connection has already been established.
+
+```text
+Enrollment Service
+        │
+        ▼
+connection established
+        │
+        ▼
+Course Service processing...
+        │
+        │ too slow
+        ▼
+read timeout
+```
+
+The Enrollment Service currently uses:
+
+```text
+read timeout = 2 seconds
+```
+
+---
+
+# 37. RestClient Timeout Configuration
+
+The `CourseClient` uses Java's HTTP client together with Spring's `JdkClientHttpRequestFactory`.
+
+```java
+HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(2))
+        .build();
+
+JdkClientHttpRequestFactory requestFactory =
+        new JdkClientHttpRequestFactory(httpClient);
+
+requestFactory.setReadTimeout(Duration.ofSeconds(2));
+
+this.restClient = builder
+        .baseUrl(baseUrl)
+        .requestFactory(requestFactory)
+        .build();
+```
+
+The resulting architecture is:
+
+```text
+CourseClient
+    │
+    ├── connect timeout = 2s
+    │
+    └── read timeout = 2s
+    │
+    ▼
+RestClient
+    │
+    ▼
+Course Service
+```
+
+An important implementation detail is that creating and configuring the request factory is not enough.
+
+It must actually be attached to the `RestClient`:
+
+```text
+Create requestFactory
+        ↓
+Configure timeouts
+        ↓
+Attach requestFactory to RestClient
+        ↓
+RestClient uses configured timeouts
+```
+
+Without:
+
+```java
+.requestFactory(requestFactory)
+```
+
+the custom timeout configuration would not be used.
+
+---
+
+# 38. Timeout Test
+
+To test the read timeout, a temporary artificial delay was introduced into the Course application's endpoint.
+
+The Course endpoint temporarily executed:
+
+```java
+try {
+    Thread.sleep(5000);
+} catch (InterruptedException exception) {
+    Thread.currentThread().interrupt();
+}
+```
+
+This simulated:
+
+```text
+Course Service response time = 5 seconds
+```
+
+while the Enrollment Service was configured with:
+
+```text
+read timeout = 2 seconds
+```
+
+The test therefore became:
+
+```text
+POST /enrollments
+        │
+        ▼
+Enrollment Service
+        │
+        ▼
+CourseClient
+        │
+        ▼
+HTTP connection succeeds
+        │
+        ▼
+Course Service
+        │
+        ▼
+Thread.sleep(5000)
+        │
+        ▼
+Enrollment waits 2 seconds
+        │
+        X
+read timeout
+```
+
+The Enrollment Service returned:
+
+```json
+{
+  "status": 503,
+  "message": "Course Service is currently unavailable"
+}
+```
+
+---
+
+# 39. Timeout Exception Flow
+
+The timeout is exposed by the HTTP client as a resource-access failure.
+
+```text
+Course Service slow
+        │
+        ▼
+read timeout
+        │
+        ▼
+ResourceAccessException
+        │
+        ▼
+CourseServiceUnavailableException
+        │
+        ▼
+GlobalExceptionHandler
+        │
+        ▼
+503 Service Unavailable
+```
+
+This means the public API does not need to expose the technical distinction between:
+
+```text
+Course Service DOWN
+```
+
+and:
+
+```text
+Course Service too SLOW
+```
+
+Both mean that the Enrollment Service cannot currently complete the operation.
+
+Therefore:
+
+```text
+Dependency unavailable
+        ↓
+503
+
+Dependency too slow
+        ↓
+503
+```
+
+The internal technical cause remains available through the exception chain and logs.
+
+---
+
+# 40. Timeout and Remote Server Execution
+
+A client timeout does not necessarily stop the code already running inside the remote server.
+
+During the test:
+
+```text
+Enrollment Service
+        │
+        │ waits 2 seconds
+        X
+timeout
+        │
+        ▼
+returns 503
+```
+
+while the Course application could still continue:
+
+```text
+Course Service
+        │
+        ▼
+Thread.sleep(5000)
+        │
+        ▼
+sleep finishes
+        │
+        ▼
+controller execution continues
+```
+
+Therefore:
+
+> Client timeout means the caller stops waiting. It does not necessarily cancel the remote server-side operation.
+
+This distinction becomes especially important when remote operations modify data.
+
+---
+
+# 41. Timeout and Data Consistency
+
+The timeout occurred before the Enrollment Service persisted the enrollment.
+
+The flow was:
+
+```text
+POST /enrollments
+        │
+        ▼
+validate Course remotely
+        │
+        ▼
+timeout
+        │
+        ▼
+CourseServiceUnavailableException
+        │
+        ▼
+EnrollmentService.create() exits
+        │
+        ▼
+EnrollmentRepository.save() NOT executed
+```
+
+MongoDB was checked afterward.
+
+The timed-out enrollment was not present.
+
+Therefore:
+
+```text
+Remote validation timeout
+        ↓
+local write aborted
+        ↓
+MongoDB unchanged
+```
+
+This confirms the same failure-isolation behavior previously tested when the Course Service was completely unavailable.
+
+---
+
+# 42. Timeout Recovery Test
+
+After the timeout test, the artificial:
+
+```java
+Thread.sleep(5000);
+```
+
+was removed from the Course application.
+
+The normal enrollment request was executed again.
+
+```text
+Course responds in < 2 seconds
+        ↓
+no timeout
+        ↓
+validation succeeds
+        ↓
+EnrollmentRepository.save()
+        ↓
+MongoDB
+        ↓
+201 Created
+```
+
+This confirms that the timeout configuration does not interfere with healthy requests.
+
+---
+
+# 43. Current Resilience Behavior
+
+The Enrollment Service currently behaves as follows:
+
+```text
+Course exists and responds quickly
+        ↓
+201 Created
+```
+
+```text
+Course does not exist
+        ↓
+404 Not Found
+```
+
+```text
+Course Service is down
+        ↓
+503 Service Unavailable
+```
+
+```text
+Course Service is too slow
+        ↓
+timeout
+        ↓
+503 Service Unavailable
+```
+
+In both dependency-failure situations:
+
+```text
+503
+ ↓
+Enrollment not persisted
+```
+
+---
+
+# 44. Why Timeouts Matter
+
+Without timeouts:
+
+```text
+slow dependency
+      ↓
+waiting request threads
+      ↓
+more incoming requests
+      ↓
+more blocked resources
+      ↓
+calling service becomes slow
+      ↓
+possible cascading failure
+```
+
+With bounded timeouts:
+
+```text
+slow dependency
+      ↓
+wait maximum configured time
+      ↓
+fail fast
+      ↓
+release resources
+      ↓
+protect calling service
+```
+
+The key principle is:
+
+> A remote call must have a bounded waiting time.
+
+---
+
+# 45. Next Resilience Topics
+
+The next distributed-system topics are:
+
+```text
+Retries
+   ↓
+Circuit Breaker
+```
 
 ---
 
@@ -1611,7 +2027,7 @@ OPEN
 
 ---
 
-# 37. Resilience Goal
+# 46. Resilience Goal
 
 The objective of resilience is not to pretend failures do not happen.
 
@@ -1637,7 +2053,7 @@ The architecture must therefore define what happens when they do.
 
 ---
 
-# 38. Current Microservices Learning Position
+# 47. Current Microservices Learning Position
 
 Current progress:
 
@@ -1666,9 +2082,13 @@ Failure isolation
    ↓
 Recovery
    ↓
-CURRENT POSITION
+Timeout configuration
    ↓
-Timeouts
+Slow dependency test
+   ↓
+Timeout handling
+   ↓
+CURRENT POSITION
    ↓
 Retries
    ↓

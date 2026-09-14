@@ -31,9 +31,7 @@ public class EnrollmentService {
     public Enrollment create(Enrollment enrollment) {
 
         if (!courseClient.courseExists(enrollment.courseId())) {
-            throw new CourseNotFoundException(
-                    enrollment.courseId()
-            );
+            throw new CourseNotFoundException(enrollment.courseId());
         }
 
         EnrollmentDocument enrollmentDocument = new EnrollmentDocument(
