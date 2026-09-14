@@ -22,6 +22,10 @@
 # Build Course Docker image
 #    ↓
 # Push Course Docker image
+#    ↓
+# Build Enrollment Docker image
+#    ↓
+# Push Enrollment Docker image
 
 name: CI
 
@@ -153,3 +157,21 @@ jobs:
         run: |
           docker push ghcr.io/${{ github.repository }}:latest
           docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      # The Enrollment Service is an independent deployment unit,
+      # so it gets its own Docker image and GHCR package.
+      # Result:
+      # ghcr.io/rmarintech/climbing-management-sb-enrollment-service:latest
+      # and:
+      # ghcr.io/rmarintech/climbing-management-sb-enrollment-service:<commit-sha>
+      - name: Build Enrollment Docker image
+        run: |
+          docker build \
+            -t ghcr.io/${{ github.repository }}-enrollment-service:latest \
+            -t ghcr.io/${{ github.repository }}-enrollment-service:${{ github.sha }} \
+            ./services/enrollment-service
+
+      - name: Push Enrollment Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository }}-enrollment-service:latest
+          docker push ghcr.io/${{ github.repository }}-enrollment-service:${{ github.sha }}
