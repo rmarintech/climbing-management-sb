@@ -4,8 +4,8 @@ services:
     image: postgres:17
 
     environment:
-      POSTGRES_DB: ${ENV_POSTGRES_DB}
-      POSTGRES_USER: ${ENV_POSTGRES_USER}
+      POSTGRES_DB: ${ENV_CLIMBAPP_POSTGRES_DB}
+      POSTGRES_USER: ${ENV_CLIMBAPP_POSTGRES_USER}
       #The application should not receive the database password as an environment variable.
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
 
@@ -19,7 +19,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${ENV_POSTGRES_USER} -d ${ENV_POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${ENV_CLIMBAPP_POSTGRES_USER} -d ${ENV_CLIMBAPP_POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -74,7 +74,23 @@ services:
       - "27017:27017"
 
 
+  enrollment-service:
+    build:
+      context: ./services/enrollment-service
 
+    image: enrollment-service:local
+
+    ports:
+      - "${ENV_ENROLLMENT_PORT}:8081"
+
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      ENROLLMENT_MONGO_DB: ${ENV_ENROLLMENT_MONGO_DB}
+      COURSE_SERVICE_BASE_URL: ${ENV_CLIMBAPP_SERVICE_BASE_URL}
+
+    depends_on:
+      - app
+      - mongo
 
 
   app:
@@ -98,7 +114,7 @@ services:
     #
     # The application itself listens on port 8080 inside the container.
     ports:
-      - "${ENV_APP_PORT}:8080"
+      - "${ENV_CLIMBAPP_PORT}:8080"
 
     # Docker mounts the container's root filesystem as read-only
     read_only: true
@@ -113,9 +129,9 @@ services:
       # container    .env / Compose
       # variable
       #   ↓           ↓
-      APP_MONGO_DB: ${ENV_MONGO_DB}
-      APP_POSTGRES_USER: ${ENV_POSTGRES_USER}
-      APP_POSTGRES_DB: ${ENV_POSTGRES_DB}
+      CLIMBAPP_MONGO_DB: ${ENV_CLIMBAPP_MONGO_DB}
+      CLIMBAPP_POSTGRES_USER: ${ENV_CLIMBAPP_POSTGRES_USER}
+      CLIMBAPP_POSTGRES_DB: ${ENV_CLIMBAPP_POSTGRES_DB}
 
     secrets:
       # Docker secret is mounted with different filenames depending on the consumer:

@@ -1531,7 +1531,7 @@ JdkClientHttpRequestFactory requestFactory =
 
 requestFactory.setReadTimeout(Duration.ofSeconds(2));
 
-this.restClient = builder
+        this.restClient = builder
         .baseUrl(baseUrl)
         .requestFactory(requestFactory)
         .build();
@@ -1585,9 +1585,9 @@ The Course endpoint temporarily executed:
 
 ```java
 try {
-    Thread.sleep(5000);
+        Thread.sleep(5000);
 } catch (InterruptedException exception) {
-    Thread.currentThread().interrupt();
+        Thread.currentThread().interrupt();
 }
 ```
 
@@ -2452,15 +2452,15 @@ The Enrollment Service imports the Spring Cloud BOM:
 </properties>
 
 <dependencyManagement>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-dependencies</artifactId>
-            <version>${spring-cloud.version}</version>
-            <type>pom</type>
-            <scope>import</scope>
-        </dependency>
-    </dependencies>
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+    </dependency>
+</dependencies>
 </dependencyManagement>
 ```
 
@@ -2493,7 +2493,7 @@ public class CircuitBreakerConfiguration {
 
     @Bean
     public Customizer<FrameworkRetryCircuitBreakerFactory>
-            courseServiceCircuitBreakerCustomizer() {
+    courseServiceCircuitBreakerCustomizer() {
 
         return factory -> factory.configure(
                 builder -> builder
@@ -2811,7 +2811,658 @@ The resilience milestone is complete.
 
 ---
 
-# 68. Current Microservices Learning Position
+# 68. Independent Containerization
+
+After extracting the Enrollment Service into an independent Spring Boot application, the next step was to make it independently containerizable.
+
+The repository now contains two independently buildable Spring Boot applications, each with its own Dockerfile:
+
+```text
+climbing-management-sb/
+│
+├── Dockerfile
+│   └── Course application
+│
+└── services/
+    └── enrollment-service/
+        ├── pom.xml
+        ├── mvnw
+        ├── .mvn/
+        ├── src/
+        └── Dockerfile
+```
+
+This creates two separate container-image boundaries:
+
+```text
+Course application
+        ↓
+Course Dockerfile
+        ↓
+Course image
+
+Enrollment Service
+        ↓
+Enrollment Dockerfile
+        ↓
+Enrollment image
+```
+
+The important architectural point is:
+
+```text
+Same Git repository
+        ≠
+same application
+        ≠
+same Docker image
+        ≠
+same deployment unit
+```
+
+The Enrollment Service can now be built as its own image:
+
+```powershell
+docker build -t enrollment-service:local .
+```
+
+from:
+
+```text
+services/enrollment-service
+```
+
+---
+
+# 69. Two Docker Build Strategies
+
+The project intentionally keeps two different valid Maven build approaches as learning examples.
+
+## Course application
+
+The Course application uses a Maven builder image:
+
+```dockerfile
+FROM maven:3.9-eclipse-temurin-21 AS build
+```
+
+Because Maven is already installed in that image, the Docker build can use:
+
+```dockerfile
+RUN mvn dependency:go-offline
+RUN mvn clean package -DskipTests
+```
+
+Conceptually:
+
+```text
+Maven builder image
+        ↓
+Maven already installed
+        ↓
+mvn
+```
+
+## Enrollment Service
+
+The Enrollment Service uses a JDK builder image:
+
+```dockerfile
+FROM eclipse-temurin:21-jdk-alpine AS builder
+```
+
+That image contains Java but does not rely on a globally installed Maven distribution.
+
+Instead, the project Maven Wrapper is copied into the image:
+
+```dockerfile
+COPY .mvn/ .mvn
+COPY mvnw pom.xml ./
+
+RUN chmod +x mvnw
+```
+
+and the build uses:
+
+```dockerfile
+RUN ./mvnw dependency:go-offline
+RUN ./mvnw clean package -DskipTests
+```
+
+Conceptually:
+
+```text
+JDK builder image
+        ↓
+project Maven Wrapper
+        ↓
+./mvnw
+```
+
+Both approaches are valid.
+
+Keeping one example of each makes the project useful as a reference for two common Java container-build strategies.
+
+---
+
+# 70. Enrollment Service Dockerfile
+
+The Enrollment Service uses a multi-stage Docker build.
+
+Conceptually:
+
+```text
+BUILD STAGE
+    │
+    ├── Java 21 JDK
+    ├── Maven Wrapper
+    ├── compile
+    └── package JAR
+            │
+            ▼
+RUNTIME STAGE
+    │
+    ├── Java 21 JRE Alpine
+    ├── non-root user
+    └── app.jar
+```
+
+The build stage contains the tools needed to compile the application.
+
+The runtime stage contains only what is needed to execute it.
+
+This preserves the same production-oriented Docker principle already used by the Course application:
+
+> Build tools belong in the build image, not in the final runtime image.
+
+The Enrollment Service listens on:
+
+```text
+8081
+```
+
+inside its container.
+
+---
+
+# 71. Docker Compose Integration
+
+The Enrollment Service was added to the existing root `compose.yaml`.
+
+The local containerized architecture is now:
+
+```text
+Docker Compose project
+│
+├── app
+│   └── Course application :8080
+│
+├── enrollment-service
+│   └── Enrollment Service :8081
+│
+├── postgres
+│   └── PostgreSQL :5432
+│
+└── mongo
+    └── MongoDB :27017
+```
+
+Docker Compose creates a shared network for these services.
+
+Inside that network, services discover each other through their Compose service names.
+
+Therefore:
+
+```text
+Course application
+        ↓
+app:8080
+```
+
+and:
+
+```text
+MongoDB
+        ↓
+mongo:27017
+```
+
+The Enrollment Service uses:
+
+```text
+http://app:8080
+```
+
+for Course validation.
+
+It uses:
+
+```text
+mongodb://mongo:27017/enrollment_management
+```
+
+for its MongoDB persistence.
+
+---
+
+# 72. Host Ports vs Container DNS
+
+An important distinction became visible during containerization.
+
+From the Windows host:
+
+```text
+http://localhost:8081
+```
+
+is valid because Compose publishes:
+
+```yaml
+ports:
+  - "8081:8081"
+```
+
+The path is:
+
+```text
+Windows
+  │
+  │ localhost:8081
+  ▼
+Docker published port
+  │
+  ▼
+Enrollment container :8081
+```
+
+However, from inside the Enrollment container:
+
+```text
+localhost:8080
+```
+
+does **not** mean the Course application.
+
+Inside a container:
+
+```text
+localhost
+    ↓
+that same container
+```
+
+Therefore service-to-service communication uses Docker DNS:
+
+```text
+Enrollment container
+      │
+      ├── http://app:8080
+      │          ↓
+      │     Course container
+      │
+      └── mongodb://mongo:27017
+                 ↓
+            Mongo container
+```
+
+This gives the general rule:
+
+```text
+Host → container
+    use localhost + published host port
+
+Container → container
+    use Compose service name + container port
+```
+
+---
+
+# 73. Docker Profile and Environment Configuration
+
+Environment-specific Docker connectivity is defined through the Docker profile and Compose environment variables.
+
+The Enrollment Service Docker configuration follows this flow:
+
+```text
+.env
+  ↓
+compose.yaml
+  ↓
+container environment
+  ↓
+application-docker.properties
+  ↓
+Spring Boot
+```
+
+Example `.env` values:
+
+```properties
+ENV_ENROLLMENT_MONGO_DB=enrollment_management
+ENV_COURSE_SERVICE_BASE_URL=http://app:8080
+ENV_ENROLLMENT_PORT=8081
+```
+
+Compose maps those values into the container:
+
+```yaml
+environment:
+  SPRING_PROFILES_ACTIVE: docker
+  ENROLLMENT_MONGO_DB: ${ENV_ENROLLMENT_MONGO_DB}
+  COURSE_SERVICE_BASE_URL: ${ENV_COURSE_SERVICE_BASE_URL}
+```
+
+The Docker profile can then use:
+
+```properties
+spring.mongodb.uri=mongodb://mongo:27017/${ENROLLMENT_MONGO_DB}
+course-service.base-url=${COURSE_SERVICE_BASE_URL}
+```
+
+The key distinction is:
+
+> Variables in `.env` are used by Docker Compose for substitution. They do not automatically become environment variables inside a container.
+
+They must be explicitly mapped under:
+
+```yaml
+environment:
+```
+
+when the application needs them.
+
+---
+
+# 74. Spring Profile Merge Lesson
+
+During containerization, an important Spring configuration behavior was observed.
+
+Spring does not replace:
+
+```text
+application.properties
+```
+
+with:
+
+```text
+application-docker.properties
+```
+
+when the Docker profile is activated.
+
+Instead, Spring merges them:
+
+```text
+application.properties
+        +
+application-docker.properties
+        ↓
+effective configuration
+```
+
+Profile-specific properties override properties with the same key, but unrelated properties from the base configuration remain active.
+
+This became relevant when old MongoDB configuration was still present in the common configuration.
+
+A property such as:
+
+```properties
+spring.mongodb.database=${SPRING_MONGODB_DATABASE}
+```
+
+can remain active even when the Docker profile defines:
+
+```properties
+spring.mongodb.uri=...
+```
+
+if it is not explicitly removed or overridden.
+
+The resulting lesson is:
+
+> Put environment-independent configuration in `application.properties` and environment-specific infrastructure addresses in profile-specific files.
+
+For this project:
+
+```text
+application.properties
+        ↓
+common application configuration
+
+application-local.properties
+        ↓
+Windows/local connectivity
+
+application-docker.properties
+        ↓
+Docker service-name connectivity
+```
+
+---
+
+# 75. Configuration Naming Consistency
+
+Containerization also demonstrated how easily configuration can fail because of inconsistent environment-variable names.
+
+The complete chain must match exactly:
+
+```text
+.env
+  ↓
+Compose substitution name
+  ↓
+container environment variable
+  ↓
+Spring placeholder
+```
+
+For example:
+
+```text
+ENV_ENROLLMENT_MONGO_DB
+        ↓
+ENROLLMENT_MONGO_DB
+        ↓
+${ENROLLMENT_MONGO_DB}
+```
+
+A typo at any layer can cause Spring to receive a missing value or a literal unresolved placeholder.
+
+This can produce errors that appear to come from PostgreSQL, MongoDB or Spring while the real problem is configuration naming.
+
+Useful diagnostic commands used during this milestone included:
+
+```powershell
+docker compose config
+```
+
+to inspect the configuration resolved by Compose, and:
+
+```powershell
+docker compose run --rm --entrypoint env enrollment-service
+```
+
+to inspect the actual environment passed to a container.
+
+These commands help separate:
+
+```text
+Compose substitution problem
+```
+
+from:
+
+```text
+Spring configuration problem
+```
+
+---
+
+# 76. Rebuilding After Application Configuration Changes
+
+`application.properties` and profile-specific property files are packaged inside the Spring Boot JAR.
+
+The JAR is then packaged inside the Docker image.
+
+Therefore:
+
+```text
+application-docker.properties changes
+        ↓
+JAR must be rebuilt
+        ↓
+Docker image must be rebuilt
+        ↓
+container must be recreated
+```
+
+A useful command for rebuilding only the Enrollment Service is:
+
+```powershell
+docker compose up -d --build --force-recreate enrollment-service
+```
+
+There is no need to tear down the entire Compose environment every time one service changes.
+
+This reflects an important microservice principle:
+
+> Independently deployable services should also be independently rebuildable and recreatable.
+
+---
+
+# 77. End-to-End Container Test
+
+The complete containerized flow was tested successfully.
+
+A request was sent from the Windows host to:
+
+```http
+POST http://localhost:8081/enrollments
+Content-Type: application/json
+```
+
+with:
+
+```json
+{
+  "courseId": 1,
+  "studentName": "Docker Test"
+}
+```
+
+The Enrollment Service returned:
+
+```json
+{
+  "id": "6aa81672ef3e4ab74a795de3",
+  "courseId": 1,
+  "studentName": "Docker Test"
+}
+```
+
+The complete runtime flow was:
+
+```text
+Windows / Postman
+        │
+        ▼
+localhost:8081
+        │
+        ▼
+Enrollment container
+        │
+        ▼
+Circuit Breaker
+        │
+        ▼
+CourseClient
+        │
+        │ HTTP
+        ▼
+app:8080
+        │
+        ▼
+Course container
+        │
+        ▼
+courseId = 1 exists
+        │
+        ▼
+Enrollment container
+        │
+        ▼
+EnrollmentRepository
+        │
+        ▼
+mongo:27017
+        │
+        ▼
+enrollment_management
+        │
+        ▼
+enrollment persisted
+```
+
+A subsequent:
+
+```http
+GET http://localhost:8081/enrollments
+```
+
+returned the newly created enrollment.
+
+This proves that the Enrollment Service now has:
+
+- its own Dockerfile
+- its own Docker image
+- its own runtime container
+- its own exposed port
+- its own MongoDB database ownership
+- container-to-container communication with the Course application
+- container-to-container communication with MongoDB
+- working Docker profile configuration
+- successful end-to-end persistence
+
+Independent containerization is therefore complete.
+
+---
+
+# 78. Architecture After Independent Containerization
+
+The current local architecture is:
+
+```text
+                         Windows / Client
+                                │
+                  ┌─────────────┴─────────────┐
+                  │                           │
+        localhost:8080                localhost:8081
+                  │                           │
+                  ▼                           ▼
+        Course container              Enrollment container
+            app:8080                        :8081
+                  │                           │
+          ┌───────┴───────┐                  │
+          │               │                  │ HTTP
+          ▼               ▼                  ▼
+ postgres:5432       mongo:27017         app:8080
+                          ▲
+                          │
+                          │ MongoDB
+                          │
+                 Enrollment Service
+```
+
+At the source-code level the services live in one monorepo.
+
+At runtime they now have independent application and container boundaries.
+
+The remaining microservices milestone is to create an independent deployment boundary in Kubernetes.
+
+---
+
+# 79. Current Microservices Learning Position
 
 Current progress:
 
@@ -2858,11 +3509,27 @@ CLOSED after recovery
    ↓
 Resilience milestone complete
    ↓
+Independent containerization ✅
+   ↓
 CURRENT POSITION
    ↓
-Independent containerization
-   ↓
 Independent Kubernetes deployment
+```
+
+The next step is:
+
+```text
+Enrollment Service
+        ↓
+independent Kubernetes resources
+        ↓
+Deployment
+        ↓
+Service
+        ↓
+configuration
+        ↓
+independent deployment
 ```
 
 ---

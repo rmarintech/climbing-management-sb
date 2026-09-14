@@ -183,7 +183,7 @@ After a milestone:
 - [x] Circuit breakers
 - [x] Resilience and automatic recovery
 - [x] Distributed-system trade-offs
-- [ ] Independent containerization
+- [x] Independent containerization
 - [ ] Independent deployment
 
 ---
@@ -300,9 +300,9 @@ Resilience                      ✅
         ↓
 Distributed-system trade-offs   ✅
         ↓
-Independent containerization    🚧 CURRENT
+Independent containerization    ✅
         ↓
-Independent deployment          ⏳
+Independent deployment          🚧 CURRENT
         ↓
 Kafka                           ⏳
         ↓
