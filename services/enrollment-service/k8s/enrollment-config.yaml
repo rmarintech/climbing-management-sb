@@ -2,18 +2,17 @@ apiVersion: v1
 kind: ConfigMap
 
 metadata:
-  name: climbing-management-config
+  name: enrollment-service-config
 
 data:
-  SPRING_PROFILES_ACTIVE: docker
-  APP_NAME: climbing-management
+  APP_NAME: enrollment-service
   LOG_LEVEL: INFO
 
   # Database configuration.
   # These values are not secrets, so they belong in a ConfigMap.
-  CLIMBAPP_MONGO_DB: climbing_management
-  CLIMBAPP_POSTGRES_USER: postgres
-  CLIMBAPP_POSTGRES_DB: climbing_management
+  ENROLLMENT_MONGO_DB: enrollment_management
+  COURSE_SERVICE_BASE_URL: http://climbing-management-service:9090
+
 
   # A ConfigMap stores non-sensitive configuration separately
   # from the container image.

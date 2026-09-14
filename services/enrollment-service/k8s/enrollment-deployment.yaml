@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: enrollment-service
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: enrollment-service
+
+
+
+  template:
+    metadata:
+      labels:
+        app: enrollment-service
+        deployment: manual
+
+    spec:
+      containers:
+        - name: enrollment-service
+
+          image: enrollment-service:local
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8081
+
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: docker
+
+          envFrom:
+            - configMapRef:
+                name: enrollment-service-config
+

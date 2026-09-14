@@ -2,21 +2,21 @@ apiVersion: v1
 kind: Service
 
 metadata:
-  name: climbing-management-service
+  name: enrollment-service
 
 spec:
   selector:
     # The Service sends traffic to Pods with this label.
-    app: climbing-management
+    app: enrollment-service
     deployment: manual
 
   ports:
     - protocol: TCP
       # Port exposed by the Service.
-      port: 9090
+      port: 9091
 
       # Port exposed by the application container.
-      targetPort: 8080
+      targetPort: 8081
 
   # ClusterIP makes the application available inside the cluster.
   type: ClusterIP
@@ -24,13 +24,13 @@ spec:
   # Kubernetes Service provides a stable internal endpoint.
   #
   # Service
-  # climbing-management-service:8080
+  # enrollment-service:8081
   #             │
   #       ┌─────┴─────┐
   #       ▼           ▼
-  #    App Pod      App Pod
-  #      :8080        :8080
+  # Enrollment Pod   Enrollment Pod
+  #      :8081        :8081
   #
-  # The Service dynamically routes traffic to Ready Pods
-  # matching the selector:
-  #     app: climbing-management
+  # The Service dynamically routes traffic to Ready Pods matching the selector:
+  #     - app=enrollment-service
+  #     - deployment=manual

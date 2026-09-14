@@ -19,6 +19,7 @@ spec:
     metadata:
       labels:
         app: climbing-management
+        deployment: manual
 
     spec:
       # The application does not need to access the Kubernetes API.

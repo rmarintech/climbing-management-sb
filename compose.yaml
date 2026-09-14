@@ -80,6 +80,10 @@ services:
 
     image: enrollment-service:local
 
+    # So we can try kubernetes reach by
+    #  kubectl port-forward service/enrollment-service 9091:9091
+    #  Docker --> Invoke-RestMethod http://localhost:8081/enrollments
+    #  Kubernetes --> Invoke-RestMethod http://localhost:9091/enrollments
     ports:
       - "${ENV_ENROLLMENT_PORT}:8081"
 
@@ -113,6 +117,11 @@ services:
     #   Docker app container:8080
     #
     # The application itself listens on port 8080 inside the container.
+
+    # So we can try kubernetes reach by
+    #  kubectl port-forward service/climbing-management-service 9090:9090
+    #  Docker --> Invoke-RestMethod http://localhost:8080/courses
+    #  Kubernetes --> Invoke-RestMethod http://localhost:9090/jpa/courses
     ports:
       - "${ENV_CLIMBAPP_PORT}:8080"
 
@@ -152,7 +161,7 @@ services:
       postgres:
         condition: service_healthy
       mongo:
-     #  condition: service_started
+        #  condition: service_started
         condition: service_healthy
 
 volumes:
