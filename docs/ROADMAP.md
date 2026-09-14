@@ -230,7 +230,7 @@ After a milestone:
 
 - [ ] API versioning
 - [x] Timeouts
-- [ ] Retries
+- [x] Retries
 - [ ] Circuit breakers
 - [ ] Resilience
 - [ ] Distributed tracing

@@ -1419,6 +1419,15 @@ The microservices evolution now demonstrates:
 - Slow dependency simulation
 - Timeout failure handling
 - No persistence after timeout
+- Spring resilience method support
+- Selective retries
+- Bounded retry attempts
+- Retry recovery after transient failure
+- No retry for business `404`
+- Retry exhaustion
+- Failure isolation after retry exhaustion
+- Retry load amplification
+- Idempotency considerations
 
 ---
 
@@ -1808,27 +1817,41 @@ Course exists and responds quickly
 Course does not exist
         ↓
 404 Not Found
+        ↓
+no retry
 ```
 
 ```text
-Course Service is down
+Transient dependency failure
+        ↓
+CourseServiceUnavailableException
+        ↓
+retry
+        ↓
+dependency recovers
+        ↓
+201 Created
+```
+
+```text
+Persistent dependency failure
+        ↓
+initial attempt
+        ↓
+retry #1
+        ↓
+retry #2
         ↓
 503 Service Unavailable
 ```
 
-```text
-Course Service is too slow
-        ↓
-timeout
-        ↓
-503 Service Unavailable
-```
-
-In both dependency-failure situations:
+In failure situations where course validation never succeeds:
 
 ```text
-503
- ↓
+validation failure
+        ↓
+EnrollmentRepository.save() not executed
+        ↓
 Enrollment not persisted
 ```
 
@@ -1872,70 +1895,536 @@ The key principle is:
 
 ---
 
-# 45. Next Resilience Topics
-
-The next distributed-system topics are:
-
-```text
-Retries
-   ↓
-Circuit Breaker
-```
-
----
-
-## Retry
+# 45. Retry Handling
 
 A retry allows a temporary failure to be attempted again.
 
-```text
-Request
-  │
-  X temporary failure
-  │
-  ▼
-Retry
-  │
-  ▼
-Success
+The Enrollment Service retries the Course Service validation when the failure is considered transient.
+
+Spring resilience support is enabled in the Enrollment Service with:
+
+```java
+@EnableResilientMethods
 ```
 
-Retries can be useful for transient failures such as:
+The retry policy is configured on:
 
-- brief network interruption
-- temporary service restart
-- short-lived connection problem
-- temporary `503`
-
-However, retries must be used carefully.
-
-If a dependency is already overloaded:
-
-```text
-Original request
-      ↓
-Failure
-      ↓
-Retry
-      ↓
-More load
-      ↓
-More failures
-      ↓
-More retries
+```java
+CourseClient.courseExists()
 ```
 
-This can create a **retry storm**.
+using:
 
-Retries are especially important to evaluate based on whether an operation is **idempotent**.
+```java
+@Retryable(
+        includes = CourseServiceUnavailableException.class,
+        maxRetries = 2,
+        delay = 500
+)
+```
+
+The configured policy is:
+
+```text
+maxRetries = 2
+delay      = 500 ms
+```
+
+`maxRetries = 2` means two retries **after** the initial call.
+
+```text
+Attempt #1
+    │
+    X CourseServiceUnavailableException
+    │
+    │ wait 500 ms
+    ▼
+Retry #1
+    │
+    X CourseServiceUnavailableException
+    │
+    │ wait 500 ms
+    ▼
+Retry #2
+    │
+    ├── success → continue
+    │
+    └── failure → propagate exception
+```
+
+Therefore:
+
+```text
+1 initial attempt
++
+2 retries
+=
+3 maximum remote calls
+```
+
+The retry loop is bounded.
+
+It does not continue indefinitely.
 
 ---
 
-## Circuit Breaker
+# 46. Selective Retry
 
-A Circuit Breaker stops repeatedly calling a dependency that is known to be failing.
+The Enrollment Service does not retry every possible failure.
 
-Its common states are:
+The retry policy includes:
+
+```java
+CourseServiceUnavailableException.class
+```
+
+The application translates network and I/O failures first:
+
+```text
+connection failure / read timeout
+        ↓
+ResourceAccessException
+        ↓
+CourseServiceUnavailableException
+        ↓
+retry
+```
+
+This allows the retry policy to work with an application-specific exception rather than low-level networking details.
+
+A normal business failure such as:
+
+```text
+404 Course Not Found
+```
+
+is not retried.
+
+The flow is:
+
+```text
+Course Service
+      ↓
+404
+      ↓
+courseExists() returns false
+      ↓
+CourseNotFoundException
+      ↓
+404 returned to client
+```
+
+This distinction is fundamental:
+
+```text
+Transient infrastructure failure
+        ↓
+retry may help
+
+Business result
+        ↓
+retry usually does not help
+```
+
+The implementation is deliberately selective instead of retrying generic `Exception`.
+
+---
+
+# 47. Retry Recovery Test
+
+To prove that retry can recover from a transient dependency failure, the Course application was temporarily modified so that only the first validation request was slow.
+
+A counter was used only for the experiment.
+
+Conceptually:
+
+```text
+Course validation request #1
+        ↓
+sleep 5 seconds
+        ↓
+Enrollment read timeout after 2 seconds
+```
+
+The Enrollment Service translated the timeout:
+
+```text
+read timeout
+        ↓
+ResourceAccessException
+        ↓
+CourseServiceUnavailableException
+        ↓
+@Retryable
+```
+
+After the configured delay:
+
+```text
+500 ms
+```
+
+the remote call was attempted again.
+
+The second Course request responded normally:
+
+```text
+POST /enrollments
+        ↓
+Course request #1
+        ↓
+slow response
+        ↓
+read timeout
+        ↓
+CourseServiceUnavailableException
+        ↓
+wait 500 ms
+        ↓
+Course request #2
+        ↓
+200 OK
+        ↓
+course validation succeeds
+        ↓
+EnrollmentRepository.save()
+        ↓
+MongoDB
+        ↓
+201 Created
+```
+
+The successful response confirmed that the retry recovered from the transient failure.
+
+This demonstrates:
+
+> A bounded retry can allow a request to recover automatically when the dependency failure is temporary.
+
+---
+
+# 48. Retry Does Not Cancel Previous Remote Work
+
+During the retry recovery experiment, the Course Service eventually executed two database queries.
+
+This is expected.
+
+The first remote request did not automatically stop executing when the Enrollment Service timed out.
+
+Conceptually:
+
+```text
+Enrollment Service                  Course Service
+
+request #1 ───────────────────────→ sleep 5s
+       │                              │
+       X timeout after 2s             │
+       │                              │
+       ▼                              │
+wait 500 ms                           │
+       │                              │
+       ▼                              │
+retry #1 ──────────────────────────→ request #2
+                                      │
+                                      ▼
+                                   SELECT
+                                      │
+                                      ▼
+                                    200 OK
+
+                                      meanwhile...
+
+request #1 finishes sleeping
+        │
+        ▼
+      SELECT
+```
+
+Therefore a retry can temporarily create multiple executions of the same remote operation.
+
+This is one of the reasons retries must be designed carefully.
+
+---
+
+# 49. 404 No-Retry Test
+
+A request was made using a Course identifier that did not exist.
+
+The Course Service received exactly one validation request:
+
+```text
+Course validation request #1
+        ↓
+database lookup
+        ↓
+404
+```
+
+The Enrollment Service returned:
+
+```json
+{
+  "message": "Course not found: 999999",
+  "status": 404
+}
+```
+
+There was no:
+
+```text
+Course validation request #2
+```
+
+and no:
+
+```text
+Course validation request #3
+```
+
+This proved that the retry configuration is selective.
+
+```text
+404
+ ↓
+business outcome
+ ↓
+no retry
+```
+
+A retry would not normally help when the Course Service has successfully answered that the resource does not exist.
+
+---
+
+# 50. Retry Exhaustion Test
+
+Another experiment deliberately made every Course validation request slower than the configured read timeout.
+
+The Enrollment Service therefore executed:
+
+```text
+Attempt #1
+    ↓
+timeout
+    ↓
+Retry #1
+    ↓
+timeout
+    ↓
+Retry #2
+    ↓
+timeout
+    ↓
+stop retrying
+```
+
+The Course Service received exactly three validation requests:
+
+```text
+Course validation request #1
+Course validation request #2
+Course validation request #3
+```
+
+The final Enrollment API response was:
+
+```json
+{
+  "message": "Course Service is currently unavailable",
+  "status": 503
+}
+```
+
+This proves that retries are bounded.
+
+```text
+maxRetries = 2
+        ↓
+3 total attempts maximum
+        ↓
+failure propagated
+        ↓
+503
+```
+
+The failed enrollment was checked afterward.
+
+It was not persisted.
+
+Therefore:
+
+```text
+all retry attempts fail
+        ↓
+CourseServiceUnavailableException
+        ↓
+EnrollmentRepository.save() not executed
+        ↓
+MongoDB unchanged
+```
+
+Failure isolation remains intact even when retry is enabled.
+
+---
+
+# 51. Retry Trade-Offs
+
+Retries improve resilience when failures are temporary.
+
+However, they also increase load.
+
+Without retry:
+
+```text
+1 incoming request
+        ↓
+1 remote call
+```
+
+With two retries:
+
+```text
+1 incoming request
+        ↓
+up to 3 remote calls
+```
+
+If the dependency is already overloaded:
+
+```text
+Dependency slow
+      ↓
+requests fail
+      ↓
+clients retry
+      ↓
+more requests reach dependency
+      ↓
+dependency becomes even slower
+      ↓
+more retries
+```
+
+This can create a:
+
+```text
+Retry storm
+```
+
+Retries therefore need:
+
+```text
+bounded attempts
+        +
+delay / backoff
+        +
+timeouts
+        +
+careful exception selection
+```
+
+A retry is not automatically beneficial merely because a request failed.
+
+The failure type and the operation being retried matter.
+
+---
+
+# 52. Why Idempotency Matters
+
+The current remote operation is:
+
+```http
+GET /jpa/courses/{id}
+```
+
+A GET request is expected to be idempotent.
+
+Executing the same Course lookup multiple times should not modify Course state.
+
+Therefore retrying this operation is comparatively safe.
+
+State-changing operations require more care.
+
+For example:
+
+```text
+POST payment
+      ↓
+server processes payment
+      ↓
+response is lost / client times out
+      ↓
+client retries POST
+      ↓
+possible duplicate payment
+```
+
+From the caller's perspective, a timeout can make the outcome ambiguous.
+
+The caller may not know whether the remote side completed the operation.
+
+For state-changing operations, distributed systems may therefore require mechanisms such as:
+
+```text
+Idempotency keys
+Deduplication
+Unique constraints
+Transactional outbox
+```
+
+depending on the use case.
+
+The important principle is:
+
+> Retry safety depends not only on the failure but also on the semantics of the operation being retried.
+
+---
+
+# 53. Next Resilience Topic — Circuit Breaker
+
+Timeouts and retries solve different problems:
+
+```text
+Timeout
+   ↓
+do not wait indefinitely
+
+Retry
+   ↓
+try again after a transient failure
+```
+
+But retries have a limitation.
+
+If the dependency is continuously unhealthy:
+
+```text
+Request
+   ↓
+failure
+   ↓
+retry
+   ↓
+failure
+   ↓
+retry
+   ↓
+failure
+```
+
+every incoming Enrollment request can still create multiple failing Course calls.
+
+The next resilience mechanism is therefore:
+
+```text
+Circuit Breaker
+```
+
+A Circuit Breaker stops repeatedly calling a dependency that is already known to be failing.
+
+---
+
+# 54. Circuit Breaker
+
+A Circuit Breaker commonly has three states:
 
 ```text
 CLOSED
@@ -1953,7 +2442,7 @@ HALF-OPEN
   └── failure → OPEN
 ```
 
-### CLOSED
+## CLOSED
 
 Normal state.
 
@@ -1968,7 +2457,9 @@ Calls are allowed.
 
 Failures are monitored.
 
-### OPEN
+---
+
+## OPEN
 
 Too many failures have occurred.
 
@@ -1979,25 +2470,29 @@ Enrollment Service
 Course Service
 ```
 
-Calls are not sent to the failing dependency.
+Calls are rejected without sending another network request to the failing dependency.
 
-Requests fail quickly.
+This allows the caller to fail quickly and protects the dependency from repeated calls.
 
-This prevents:
+It helps prevent:
 
 ```text
 Repeated network calls
         ↓
-Long waits
+Timeout waits
         ↓
-Thread exhaustion
+Retry amplification
+        ↓
+Resource exhaustion
         ↓
 Cascading failure
 ```
 
-### HALF-OPEN
+---
 
-After a configured delay, a limited number of requests are allowed through.
+## HALF-OPEN
+
+After a configured period, the Circuit Breaker allows a limited number of test requests.
 
 ```text
 Circuit OPEN
@@ -2009,25 +2504,31 @@ HALF-OPEN
 test request
 ```
 
-If the test succeeds:
+If the dependency has recovered:
 
 ```text
 HALF-OPEN
+    ↓
+success
     ↓
 CLOSED
 ```
 
-If it fails:
+If the dependency is still failing:
 
 ```text
 HALF-OPEN
     ↓
+failure
+    ↓
 OPEN
 ```
 
+The next implementation milestone will add this behavior around the Course Service dependency.
+
 ---
 
-# 46. Resilience Goal
+# 55. Resilience Goal
 
 The objective of resilience is not to pretend failures do not happen.
 
@@ -2051,9 +2552,19 @@ Microservices should be designed assuming:
 
 The architecture must therefore define what happens when they do.
 
+The resilience mechanisms introduced so far are:
+
+```text
+Timeouts ✅
+   ↓
+Retries ✅
+   ↓
+Circuit Breaker ← NEXT
+```
+
 ---
 
-# 47. Current Microservices Learning Position
+# 56. Current Microservices Learning Position
 
 Current progress:
 
@@ -2088,9 +2599,17 @@ Slow dependency test
    ↓
 Timeout handling
    ↓
-CURRENT POSITION
+Selective retry
    ↓
-Retries
+Transient failure recovery
+   ↓
+404 no-retry verification
+   ↓
+Retry exhaustion verification
+   ↓
+Failure isolation with retries
+   ↓
+CURRENT POSITION
    ↓
 Circuit Breaker
    ↓
