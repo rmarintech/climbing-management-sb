@@ -1,3 +1,30 @@
+# CD flow:
+#
+# git push → main
+#       ↓
+#      CI
+#       ↓
+# Build + test
+#       ↓
+# Docker build
+#       ↓
+# ghcr.io/<repo>:<github.sha>
+#       ↓
+# CI SUCCESS
+#       ↓
+# workflow_run event
+#       ↓
+# CD starts
+#       ↓
+# Production approval gate
+#       ↓
+# Deploy exact same SHA image
+
+
+ # head_sha is the exact Git commit successfully built and published by CI.
+ # Using the same SHA tag ensures CD deploys the same immutable Docker image
+ # instead of rebuilding the application.
+
 name: CD
 
 on:

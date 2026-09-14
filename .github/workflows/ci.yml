@@ -1,7 +1,27 @@
 # Using GitHub Actions to run CI on every push to main.
 # The workflow provisions PostgreSQL and MongoDB as service containers,
-# sets up Java 21 with Maven caching, builds and tests the application,
-# uploads the JAR artifact, and publishes the Docker image to GHCR.
+# sets up Java 21 with Maven caching,
+# builds and tests both Spring Boot applications,
+# uploads both JAR artifacts,
+# and publishes the Course application Docker image to GHCR.
+
+# CI flow:
+#
+# Checkout
+#    ↓
+# Set up Java
+#    ↓
+# Build/test Course
+#    ↓
+# Build/test Enrollment
+#    ↓
+# Upload artifacts
+#    ↓
+# Login to GHCR
+#    ↓
+# Build Course Docker image
+#    ↓
+# Push Course Docker image
 
 name: CI
 
@@ -25,6 +45,8 @@ jobs:
     services:
 
       # PostgreSQL service
+      # Temporary credentials used only by the disposable CI database.
+      # These are not production credentials.
       postgres:
         image: postgres:17
         env:
@@ -64,25 +86,35 @@ jobs:
           distribution: 'temurin'
           # Allows GitHub Actions to cache Maven dependencies, making subsequent builds faster.
           cache: maven
+          # root pom.xml changes
+          #       OR
+          # enrollment-service/pom.xml changes
+          #       ↓
+          # Maven cache key can change correctly
+          cache-dependency-path: |
+            pom.xml
+            services/enrollment-service/pom.xml
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build application
+      - name: Build Course application
         # run: means Execute this shell command on the runner.
         #   mvn test	Compile + run tests
         #   mvn package	Compile + test + create JAR
         #   mvn verify	Package + additional verification
         #   mvn install	Package + install JAR into local Maven repository
-        run: ./mvnw package
+        run: |
+          chmod +x mvnw
+          ./mvnw package
         # Your project needs to have the Maven Wrapper files:  mvnw   mvnw.cmd   .mvn/
         # But GitHub's Ubuntu runner can use:  ./mvnw package
 
-      - name: Upload JAR artifact
+      # Build and test the independent Enrollment Service.
+      - name: Build Enrollment Service
+        working-directory: services/enrollment-service
+        run: |
+          chmod +x mvnw
+          ./mvnw package
+
+      - name: Upload Course application JAR
         uses: actions/upload-artifact@v4
         with:
           # Gives the artifact a recognizable name in GitHub Actions
@@ -90,18 +122,34 @@ jobs:
           # Maven puts packaged JARs inside target/
           path: target/*.jar
 
+      - name: Upload Enrollment Service JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: enrollment-service-jar
+          path: services/enrollment-service/target/*.jar
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          # GITHUB_TOKEN is an automatically generated, short-lived token provided by GitHub Actions for each workflow run.
+          # Its effective permissions are controlled by the workflow permissions block.
+          # In this project, packages: write allows the workflow to authenticate to GHCR and publish Docker images.
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # JAR = application artifact
       # Docker image = deployable application package
       # Immutable image tags (github.sha) allow us to identify and deploy an exact application version,
       # making deployments reproducible and rollbacks safer.
-      - name: Build Docker image
+      - name: Build Course Docker image
         run: |
           docker build \
             -t ghcr.io/${{ github.repository }}:latest \
             -t ghcr.io/${{ github.repository }}:${{ github.sha }} \
             .
 
-      - name: Push Docker image
+      - name: Push Course Docker image
         run: |
           docker push ghcr.io/${{ github.repository }}:latest
           docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
