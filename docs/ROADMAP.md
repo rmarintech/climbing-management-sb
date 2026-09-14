@@ -176,7 +176,7 @@ After a milestone:
 - [x] Database-per-service ownership
 - [x] Inter-service REST communication
 - [ ] Independent deployment
-- [ ] Failure isolation
+- [x] Failure isolation
 - [ ] Distributed-system trade-offs
 
 ---

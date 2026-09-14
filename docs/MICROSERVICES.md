@@ -106,12 +106,12 @@ localhost:8081
 
 Each application has its own:
 
-* `pom.xml`
-* Spring Boot `main()` method
-* dependencies
-* configuration
-* HTTP port
-* JVM process
+- `pom.xml`
+- Spring Boot `main()` method
+- dependencies
+- configuration
+- HTTP port
+- JVM process
 
 Therefore:
 
@@ -453,7 +453,7 @@ RestClient.Builder
 
 The client is built from:
 
-```java
+```text
 RestClient.Builder
         ↓
 baseUrl
@@ -496,12 +496,12 @@ This distinction is fundamental.
 
 A local Java call normally does not depend on:
 
-* DNS
-* Network availability
-* TCP connections
-* HTTP status codes
-* Timeouts
-* Remote service health
+- DNS
+- Network availability
+- TCP connections
+- HTTP status codes
+- Timeouts
+- Remote service health
 
 A microservice call does.
 
@@ -766,6 +766,10 @@ Example:
         "course-service.base-url=http://localhost:8080"
 })
 class EnrollmentServiceApplicationTests {
+
+    @Test
+    void contextLoads() {
+    }
 }
 ```
 
@@ -790,8 +794,8 @@ The project now looks like:
               │                EnrollmentRepository
               │                         │
               │                         ▼
-              │                 MongoDB
-              │             enrollment_management
+              │                     MongoDB
+              │                enrollment_management
               │
               ◄──────── HTTP ──────────┘
                    course validation
@@ -799,14 +803,14 @@ The project now looks like:
 
 The Enrollment Service now has:
 
-* Independent runtime
-* Independent Maven build
-* Independent API
-* Independent persistence
-* Its own MongoDB database ownership
-* Service-to-service REST communication
-* Remote 404 translation
-* Separate local configuration
+- Independent runtime
+- Independent Maven build
+- Independent API
+- Independent persistence
+- Its own MongoDB database ownership
+- Service-to-service REST communication
+- Remote 404 translation
+- Separate local configuration
 
 ---
 
@@ -840,9 +844,55 @@ Once a system becomes distributed, the network becomes part of the architecture.
 
 ---
 
-# 22. Current Next Step
+# 22. Dependency Failure Handling
 
-The next milestone is to test what happens when the Course application is completely unavailable.
+The Enrollment Service depends on the Course application to validate that a course exists before creating an enrollment.
+
+Because this validation happens through HTTP, the dependency can be unavailable even when the Enrollment Service itself is healthy.
+
+```text
+Client
+  │
+  ▼
+Enrollment Service :8081
+  │
+  ▼
+CourseClient
+  │
+  │ HTTP
+  ▼
+Course Application :8080
+  X
+DOWN
+```
+
+This is fundamentally different from a normal Java method call inside a monolith.
+
+---
+
+# 23. Observed Failure
+
+The Course application was intentionally stopped while the Enrollment Service remained running.
+
+A request was sent to:
+
+```http
+POST http://localhost:8081/enrollments
+Content-Type: application/json
+```
+
+```json
+{
+  "courseId": 1,
+  "studentName": "Failure Test"
+}
+```
+
+Initially the dependency failure propagated as an unexpected server error.
+
+The underlying problem was a failed network connection to the Course application.
+
+Conceptually:
 
 ```text
 Enrollment Service
@@ -851,19 +901,783 @@ Enrollment Service
 CourseClient
         │
         ▼
-Course Application DOWN
+HTTP connection
+        │
+        X
+Connection cannot be established
 ```
 
-This introduces:
+The Enrollment Service itself was alive.
 
-* Connection failures
-* Dependency availability
-* Failure isolation
-* Proper error mapping
-* Timeouts
-* Resilience concepts
+The failure happened because one of its dependencies was unavailable.
 
-This is where the project starts moving from simply having multiple services to understanding **distributed-system behavior**.
+---
+
+# 24. Low-Level Network Failure
+
+Low-level Java networking exceptions should not leak directly into the service API.
+
+Spring's REST client infrastructure translates connection and I/O problems into:
+
+```text
+ResourceAccessException
+```
+
+The important abstraction is:
+
+```text
+Low-level networking failure
+        │
+        ▼
+ResourceAccessException
+        │
+        ▼
+Application-specific exception
+```
+
+The Enrollment Service therefore introduces:
+
+```text
+CourseServiceUnavailableException
+```
+
+Example:
+
+```java
+public class CourseServiceUnavailableException extends RuntimeException {
+
+    public CourseServiceUnavailableException(Throwable cause) {
+        super("Course Service is currently unavailable", cause);
+    }
+}
+```
+
+This avoids coupling the rest of the application to low-level networking exceptions.
+
+---
+
+# 25. Translating Infrastructure Failures
+
+`CourseClient` catches the infrastructure exception and translates it into an application-specific exception.
+
+Conceptually:
+
+```java
+try {
+
+    return restClient.get()
+            .uri(...)
+            .exchange((request, response) -> {
+
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return true;
+                }
+
+                if (response.getStatusCode().value() == 404) {
+                    return false;
+                }
+
+                throw new IllegalStateException(
+                        "Unexpected response from Course Service: "
+                                + response.getStatusCode()
+                );
+            });
+
+} catch (ResourceAccessException exception) {
+
+    throw new CourseServiceUnavailableException(exception);
+}
+```
+
+The important architectural boundary is:
+
+```text
+HTTP / network layer
+        │
+        ▼
+ResourceAccessException
+        │
+        ▼
+CourseClient
+        │
+        ▼
+CourseServiceUnavailableException
+```
+
+The rest of the application does not need to understand socket-level failures.
+
+---
+
+# 26. 404 vs 503
+
+A missing Course and an unavailable Course Service are two completely different situations.
+
+## Course does not exist
+
+```text
+Enrollment Service
+        │
+        ▼
+Course Service
+        │
+        ▼
+HTTP 404
+        │
+        ▼
+CourseNotFoundException
+        │
+        ▼
+404 Not Found
+```
+
+The remote service answered successfully.
+
+The requested resource simply does not exist.
+
+## Course Service is unavailable
+
+```text
+Enrollment Service
+        │
+        ▼
+CourseClient
+        │
+        X
+Cannot connect
+        │
+        ▼
+CourseServiceUnavailableException
+        │
+        ▼
+503 Service Unavailable
+```
+
+The resource may exist.
+
+The Enrollment Service simply cannot verify it because the dependency is currently unavailable.
+
+Therefore:
+
+```text
+Course absent
+    → 404 Not Found
+
+Course Service unavailable
+    → 503 Service Unavailable
+```
+
+---
+
+# 27. Global Exception Mapping
+
+The Enrollment Service maps the application-specific exception using the global exception handler.
+
+Example:
+
+```java
+@ExceptionHandler(CourseServiceUnavailableException.class)
+@ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+public Map<String, Object> handleCourseServiceUnavailable(
+        CourseServiceUnavailableException exception) {
+
+    return Map.of(
+            "timestamp", Instant.now().toString(),
+            "status", HttpStatus.SERVICE_UNAVAILABLE.value(),
+            "message", exception.getMessage()
+    );
+}
+```
+
+The API response is now:
+
+```json
+{
+  "timestamp": "2026-09-14T07:05:49.182284500Z",
+  "message": "Course Service is currently unavailable",
+  "status": 503
+}
+```
+
+This exposes a stable API contract instead of implementation-specific networking details.
+
+---
+
+# 28. Current Failure Matrix
+
+The Enrollment API now distinguishes between three important outcomes:
+
+| Situation | Result |
+| --- | --- |
+| Course exists | `201 Created` |
+| Course does not exist | `404 Not Found` |
+| Course Service unavailable | `503 Service Unavailable` |
+
+Conceptually:
+
+```text
+POST /enrollments
+        │
+        ▼
+CourseClient
+        │
+        ├── 2xx
+        │     ↓
+        │ course exists
+        │     ↓
+        │ save
+        │     ↓
+        │ 201
+        │
+        ├── 404
+        │     ↓
+        │ CourseNotFoundException
+        │     ↓
+        │ 404
+        │
+        └── connection failure
+              ↓
+        CourseServiceUnavailableException
+              ↓
+             503
+```
+
+---
+
+# 29. Failure Isolation
+
+The Enrollment Service validates the Course before persisting the enrollment.
+
+```text
+POST /enrollments
+        │
+        ▼
+validate course
+        │
+        ├── SUCCESS
+        │      ↓
+        │ EnrollmentRepository.save()
+        │      ↓
+        │ MongoDB
+        │
+        └── FAILURE
+               ↓
+           no save()
+               ↓
+          MongoDB unchanged
+```
+
+This ordering is important.
+
+A dependency failure must not leave partially written local state.
+
+---
+
+# 30. Failure Isolation Test
+
+While the Course application was stopped, an enrollment creation was attempted.
+
+The request returned:
+
+```text
+503 Service Unavailable
+```
+
+The stored enrollments were then checked with:
+
+```http
+GET http://localhost:8081/enrollments
+```
+
+The database still contained only previously successful enrollments.
+
+Example:
+
+```json
+[
+  {
+    "id": "6aa658eb77f2c5799e02750d",
+    "courseId": 1,
+    "studentName": "Angie"
+  },
+  {
+    "id": "6aa65fd7f963987ac79d377b",
+    "courseId": 1,
+    "studentName": "ruben"
+  }
+]
+```
+
+The failed enrollment was not stored.
+
+This confirms:
+
+```text
+Remote validation failed
+        ↓
+repository.save() not executed
+        ↓
+MongoDB unchanged
+```
+
+---
+
+# 31. Recovery Test
+
+The Course application was then started again.
+
+No restart of the Enrollment Service was required.
+
+A new request was sent:
+
+```json
+{
+  "courseId": 1,
+  "studentName": "Recovery Test"
+}
+```
+
+The enrollment was successfully persisted.
+
+The collection then contained:
+
+```json
+{
+  "courseId": 1,
+  "studentName": "Recovery Test"
+}
+```
+
+This proves:
+
+```text
+Dependency DOWN
+      ↓
+503
+      ↓
+no data corruption
+
+Dependency UP again
+      ↓
+normal communication resumes
+      ↓
+201 Created
+```
+
+The Enrollment Service does not remain permanently broken after a temporary dependency outage.
+
+---
+
+# 32. Failure Isolation Principle
+
+An important distributed-system principle demonstrated by this milestone is:
+
+> A failure in one service should not corrupt the state of another service.
+
+In this implementation:
+
+```text
+Course Service failure
+        │
+        ▼
+Enrollment creation fails
+        │
+        ▼
+Enrollment MongoDB remains consistent
+```
+
+This is a simple example of failure isolation.
+
+More complex distributed systems may require patterns such as:
+
+```text
+Timeout
+Retry
+Circuit Breaker
+Saga
+Outbox Pattern
+Idempotency
+```
+
+depending on the operation.
+
+---
+
+# 33. Local Call vs Remote Call
+
+Inside a monolith:
+
+```text
+EnrollmentService
+        │
+        ▼
+CourseService
+        │
+        ▼
+Java method
+```
+
+The call is extremely fast and exists inside one JVM.
+
+With microservices:
+
+```text
+Enrollment Service
+        │
+        ▼
+HTTP Client
+        │
+        ▼
+Network
+        │
+        ▼
+Course Service
+```
+
+The call can fail because of:
+
+```text
+Service down
+Network failure
+DNS failure
+Connection refused
+Timeout
+Slow response
+HTTP 5xx
+Invalid response
+Deployment/restart
+```
+
+This is why distributed applications need resilience mechanisms.
+
+---
+
+# 34. Current Architecture After Failure Handling
+
+```text
+                         Client
+                           │
+                           ▼
+                  Enrollment Service
+                       :8081
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              ▼                         ▼
+         CourseClient          EnrollmentRepository
+              │                         │
+              │ HTTP                    ▼
+              ▼                     MongoDB
+     Course Application          enrollment_management
+          :8080
+              │
+      ┌───────┴────────┐
+      │                │
+     2xx              404
+      │                │
+      ▼                ▼
+   continue     CourseNotFoundException
+
+connection failure
+      │
+      ▼
+ResourceAccessException
+      │
+      ▼
+CourseServiceUnavailableException
+      │
+      ▼
+503 Service Unavailable
+```
+
+---
+
+# 35. What We Have Learned So Far
+
+The microservices evolution now demonstrates:
+
+- Monolith vs microservices
+- Service boundaries
+- Independent Spring Boot applications
+- Monorepo structure
+- Independent runtime
+- Independent Maven builds
+- Independent APIs
+- Database-per-service ownership
+- MongoDB persistence
+- Different ID strategies between services
+- Service-to-service REST communication
+- Spring `RestClient`
+- Remote resource validation
+- HTTP status translation
+- Business failure vs infrastructure failure
+- `404 Not Found`
+- `503 Service Unavailable`
+- Failure isolation
+- Recovery after dependency restoration
+
+---
+
+# 36. Next Resilience Topics
+
+The next distributed-system topics are:
+
+```text
+Timeouts
+   ↓
+Retries
+   ↓
+Circuit Breaker
+```
+
+## Timeout
+
+Prevents the Enrollment Service from waiting indefinitely for the Course Service.
+
+```text
+Course Service too slow
+        ↓
+timeout
+        ↓
+fail fast
+```
+
+A remote call should not be allowed to block indefinitely.
+
+Without a timeout:
+
+```text
+Enrollment request
+        │
+        ▼
+Course Service slow
+        │
+        ▼
+Thread waits
+        │
+        ▼
+More requests arrive
+        │
+        ▼
+More threads wait
+        │
+        ▼
+Enrollment Service can become overloaded
+```
+
+Timeouts help contain this problem.
+
+---
+
+## Retry
+
+A retry allows a temporary failure to be attempted again.
+
+```text
+Request
+  │
+  X temporary failure
+  │
+  ▼
+Retry
+  │
+  ▼
+Success
+```
+
+Retries can be useful for transient failures such as:
+
+- brief network interruption
+- temporary service restart
+- short-lived connection problem
+- temporary `503`
+
+However, retries must be used carefully.
+
+If a dependency is already overloaded:
+
+```text
+Original request
+      ↓
+Failure
+      ↓
+Retry
+      ↓
+More load
+      ↓
+More failures
+      ↓
+More retries
+```
+
+This can create a **retry storm**.
+
+Retries are especially important to evaluate based on whether an operation is **idempotent**.
+
+---
+
+## Circuit Breaker
+
+A Circuit Breaker stops repeatedly calling a dependency that is known to be failing.
+
+Its common states are:
+
+```text
+CLOSED
+  │
+  │ failures exceed threshold
+  ▼
+OPEN
+  │
+  │ wait period
+  ▼
+HALF-OPEN
+  │
+  ├── success → CLOSED
+  │
+  └── failure → OPEN
+```
+
+### CLOSED
+
+Normal state.
+
+```text
+Enrollment Service
+        │
+        ▼
+Course Service
+```
+
+Calls are allowed.
+
+Failures are monitored.
+
+### OPEN
+
+Too many failures have occurred.
+
+```text
+Enrollment Service
+        │
+        X
+Course Service
+```
+
+Calls are not sent to the failing dependency.
+
+Requests fail quickly.
+
+This prevents:
+
+```text
+Repeated network calls
+        ↓
+Long waits
+        ↓
+Thread exhaustion
+        ↓
+Cascading failure
+```
+
+### HALF-OPEN
+
+After a configured delay, a limited number of requests are allowed through.
+
+```text
+Circuit OPEN
+      ↓
+wait
+      ↓
+HALF-OPEN
+      ↓
+test request
+```
+
+If the test succeeds:
+
+```text
+HALF-OPEN
+    ↓
+CLOSED
+```
+
+If it fails:
+
+```text
+HALF-OPEN
+    ↓
+OPEN
+```
+
+---
+
+# 37. Resilience Goal
+
+The objective of resilience is not to pretend failures do not happen.
+
+The goal is to:
+
+```text
+Detect failure
+      ↓
+Contain failure
+      ↓
+Fail predictably
+      ↓
+Protect resources
+      ↓
+Recover automatically when possible
+```
+
+Microservices should be designed assuming:
+
+> Remote dependencies will eventually fail.
+
+The architecture must therefore define what happens when they do.
+
+---
+
+# 38. Current Microservices Learning Position
+
+Current progress:
+
+```text
+Monolith
+   ↓
+Identify service boundary
+   ↓
+Extract Enrollment Service
+   ↓
+Independent runtime
+   ↓
+Independent persistence
+   ↓
+Database ownership
+   ↓
+REST communication
+   ↓
+Remote validation
+   ↓
+Business error translation
+   ↓
+Dependency failure handling
+   ↓
+Failure isolation
+   ↓
+Recovery
+   ↓
+CURRENT POSITION
+   ↓
+Timeouts
+   ↓
+Retries
+   ↓
+Circuit Breaker
+   ↓
+Independent containerization
+   ↓
+Independent Kubernetes deployment
+```
 
 ---
 

@@ -22,4 +22,16 @@ public class GlobalExceptionHandler {
                 "message", exception.getMessage()
         );
     }
+
+    @ExceptionHandler(CourseServiceUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Map<String, Object> handleCourseServiceUnavailableException(
+            CourseServiceUnavailableException exception) {
+
+        return Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "message", exception.getMessage()
+        );
+    }
 }

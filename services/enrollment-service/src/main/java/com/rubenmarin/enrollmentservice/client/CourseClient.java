@@ -1,7 +1,9 @@
 package com.rubenmarin.enrollmentservice.client;
 
+import com.rubenmarin.enrollmentservice.exception.CourseServiceUnavailableException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 @Component
@@ -19,24 +21,26 @@ public class CourseClient {
     }
 
     public boolean courseExists(Long courseId) {
+        try {
+            return restClient.get()
+                    .uri("/jpa/courses/{id}", courseId)
+                    .exchange((request, response) -> {
 
-        return restClient.get()
-                // Replace this path with your real Course endpoint
-                .uri("/jpa/courses/{id}", courseId)
-                .exchange((request, response) -> {
+                        if (response.getStatusCode().is2xxSuccessful()) {
+                            return true;
+                        }
 
-                    if (response.getStatusCode().is2xxSuccessful()) {
-                        return true;
-                    }
+                        if (response.getStatusCode().value() == 404) {
+                            return false;
+                        }
 
-                    if (response.getStatusCode().value() == 404) {
-                        return false;
-                    }
-
-                    throw new IllegalStateException(
-                            "Unexpected response from Course Service: "
-                                    + response.getStatusCode()
-                    );
-                });
+                        throw new IllegalStateException(
+                                "Unexpected response from Course Service: "
+                                        + response.getStatusCode()
+                        );
+                    });
+        } catch (ResourceAccessException exception) {
+            throw new CourseServiceUnavailableException(exception);
+        }
     }
 }
