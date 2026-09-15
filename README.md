@@ -2,7 +2,7 @@
 
 A backend application built with **Java 21 and Spring Boot** to manage climbing courses.
 
-The project is designed as a practical **Senior Backend Java** learning and portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, dynamic queries, aggregation, containerization, CI/CD, Kubernetes orchestration, Helm, microservices, distributed-system resilience, and modern deployment practices.
+The project is designed as a practical **Senior Backend Java** learning and portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, dynamic queries, aggregation, containerization, CI/CD, Kubernetes orchestration, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, and modern deployment practices.
 
 The application is developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -22,6 +22,7 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 * Spring Data MongoDB
 * Spring Boot Actuator
 * Spring Cloud Circuit Breaker
+* Spring Kafka
 * Hibernate
 * Jakarta Bean Validation
 * SLF4J
@@ -35,6 +36,7 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 
 * Docker
 * Docker Compose
+* Apache Kafka 4.3 / KRaft
 * Kubernetes
 * Helm
 
@@ -226,6 +228,67 @@ Implemented behavior includes:
 
 ---
 
+# 📨 Event-Driven Communication
+
+The project now also demonstrates asynchronous communication with **Apache Kafka** alongside the existing synchronous REST integration.
+
+The Course application publishes a `CourseCreatedEvent` after a Course is created:
+
+```text
+POST /jpa/courses
+        ↓
+Course Service
+        ↓
+PostgreSQL
+        ↓
+CourseCreatedEvent
+        ↓
+KafkaTemplate
+        ↓
+course-events
+```
+
+The Enrollment Service consumes that event independently:
+
+```text
+course-events
+        ↓
+Consumer Group: enrollment-service
+        ↓
+@KafkaListener
+        ↓
+Enrollment Service
+```
+
+This gives the project both communication styles:
+
+```text
+Synchronous REST
+Enrollment → Course
+        ↓
+caller waits for an immediate answer
+
+Asynchronous Kafka
+Course → Kafka → Enrollment
+        ↓
+consumer can process the event later
+```
+
+Current Kafka learning milestones include:
+
+* Kafka 4.3 running in KRaft mode
+* Reproducible `course-events` topic initialization
+* Topics, partitions and offsets
+* Spring Kafka producer with `KafkaTemplate`
+* JSON event serialization
+* Spring Kafka consumer with `@KafkaListener`
+* Consumer group `enrollment-service`
+* Committed offsets and consumer lag
+* Consumer outage and catch-up recovery
+* Producer and consumer event contracts owned independently by each service
+
+---
+
 # 🐳 Independent Containerization
 
 Both applications have independent Docker build boundaries.
@@ -256,7 +319,8 @@ Docker Compose
 ├── Course application
 ├── Enrollment Service
 ├── PostgreSQL
-└── MongoDB
+├── MongoDB
+└── Kafka
 ```
 
 Docker service discovery allows containers to communicate using service names instead of `localhost`.
@@ -317,7 +381,8 @@ For local learning and testing, Docker and Kubernetes use distinct host ports:
 ```text
 Docker Compose
 ├── Course      → localhost:8080
-└── Enrollment  → localhost:8081
+├── Enrollment  → localhost:8081
+└── Kafka       → localhost:8082
 
 Kubernetes port-forward
 ├── Course      → localhost:9090
@@ -398,6 +463,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Kubernetes | [KUBERNETES.md](docs/KUBERNETES.md) |
 | Helm | [HELM.md](docs/HELM.md) |
 | Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
+| Kafka commands and experiments | [kafka.md](cheatsheets/kafka.md) |
 
 ---
 
@@ -449,6 +515,14 @@ Independent deployment          ✅
 Microservices                   ✅ COMPLETE
         ↓
 Kafka / Event-Driven            🚧 CURRENT
+        ↓
+Kafka broker / KRaft            ✅
+        ↓
+Topics / partitions / offsets   ✅
+        ↓
+Spring producer / consumer      ✅
+        ↓
+Consumer groups                 🚧 CURRENT
         ↓
 DDD / Hexagonal                 ⏳
         ↓
@@ -516,6 +590,8 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Service-to-service communication
 * Resilience patterns
 * Event-driven architecture
+* Apache Kafka / Spring Kafka
+* Consumer groups, offsets and lag
 * Domain-driven design
 * Hexagonal architecture
 * Security
@@ -534,4 +610,4 @@ Backend Java Developer
 
 Technologies explored in this project include:
 
-`Java` · `Spring Boot` · `Spring Web` · `RestClient` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Docker` · `Docker Compose` · `GitHub Actions` · `GitHub Container Registry` · `Kubernetes` · `Helm` · `Microservices`
+`Java` · `Spring Boot` · `Spring Web` · `RestClient` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `GitHub Actions` · `GitHub Container Registry` · `Kubernetes` · `Helm` · `Microservices` · `Kafka`

@@ -191,10 +191,10 @@ After a milestone:
 
 # 🚧 Current — Event-Driven Architecture
 
-- [ ] Synchronous vs asynchronous
-- [ ] Apache Kafka
-- [ ] Producers
-- [ ] Consumers
+- [x] Synchronous vs asynchronous
+- [x] Apache Kafka
+- [x] Producers
+- [x] Consumers
 - [ ] Consumer groups
 - [ ] Event contracts
 - [ ] Retry strategy
@@ -311,7 +311,21 @@ Independent deployment          ✅
         ↓
 Microservices                   ✅ COMPLETE
         ↓
-Kafka / Event-Driven            🚧 CURRENT
+Kafka broker / KRaft            ✅
+        ↓
+Topics / partitions / offsets   ✅
+        ↓
+Spring producer                 ✅
+        ↓
+Spring consumer                 ✅
+        ↓
+Consumer groups                 🚧 CURRENT
+        ↓
+Event contracts                 ⏳
+        ↓
+Retry strategy                  ⏳
+        ↓
+Idempotency                     ⏳
         ↓
 DDD / Hexagonal                 ⏳
         ↓
@@ -322,3 +336,8 @@ Testing                         ⏳
 Advanced Backend Engineering    ⏳
         ↓
 System Design                   ⏳
+```
+
+---
+
+[Back to README](../README.md)
