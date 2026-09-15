@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.service;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.exception.CourseNotFoundException;
 import com.rubenmarin.climbingmanagementsb.exception.ExceptionMsg;
 import com.rubenmarin.climbingmanagementsb.record.CourseRecord;

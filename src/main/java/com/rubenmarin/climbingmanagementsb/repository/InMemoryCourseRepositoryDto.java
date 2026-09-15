@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.repository;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.record.CourseRecord;
 import org.springframework.stereotype.Repository;
 

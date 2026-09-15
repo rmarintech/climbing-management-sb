@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.controller;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.exception.CourseNotFoundException;
 import com.rubenmarin.climbingmanagementsb.exception.ExceptionMsg;
 import com.rubenmarin.climbingmanagementsb.record.CourseRecord;
@@ -16,7 +16,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
-import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;

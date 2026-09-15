@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.entity;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import jakarta.persistence.*;
 
 @Entity

@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.dto;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 
 import java.util.List;
 

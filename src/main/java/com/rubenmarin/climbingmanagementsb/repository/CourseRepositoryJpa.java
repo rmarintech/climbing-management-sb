@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.repository;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.entity.CourseEntity;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;

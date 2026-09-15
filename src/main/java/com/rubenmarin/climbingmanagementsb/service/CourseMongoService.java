@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.service;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.document.CourseMongoDocument;
 import com.rubenmarin.climbingmanagementsb.document.EnrollmentMongoDocument;
 import com.rubenmarin.climbingmanagementsb.dto.CourseDifficultyStatsDto;

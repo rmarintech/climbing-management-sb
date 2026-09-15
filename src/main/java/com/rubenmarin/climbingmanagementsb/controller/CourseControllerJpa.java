@@ -1,6 +1,6 @@
 package com.rubenmarin.climbingmanagementsb.controller;
 
-import com.rubenmarin.climbingmanagementsb.Difficulty;
+import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.record.CourseRecord;
 import com.rubenmarin.climbingmanagementsb.service.CourseServiceJpa;
 import jakarta.validation.Valid;
