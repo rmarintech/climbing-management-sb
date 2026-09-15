@@ -1,5 +1,7 @@
 package com.rubenmarin.climbingmanagementsb.service;
 
+import com.rubenmarin.climbingmanagementsb.event.CourseCreatedEvent;
+import com.rubenmarin.climbingmanagementsb.event.CourseEventProducer;
 import com.rubenmarin.climbingmanagementsb.model.Difficulty;
 import com.rubenmarin.climbingmanagementsb.entity.CourseEntity;
 import com.rubenmarin.climbingmanagementsb.exception.CourseNotFoundException;
@@ -16,10 +18,12 @@ public class CourseServiceJpa {
 
     private final CourseRepositoryJpa courseRepositoryJpa;
     private final TransactionTestService transactionTestService;
+    private final CourseEventProducer courseEventProducer;
 
-    public CourseServiceJpa(CourseRepositoryJpa courseRepositoryJpa, TransactionTestService transactionTestService) {
+    public CourseServiceJpa(CourseRepositoryJpa courseRepositoryJpa, TransactionTestService transactionTestService, CourseEventProducer courseEventProducer) {
         this.courseRepositoryJpa = courseRepositoryJpa;
         this.transactionTestService = transactionTestService;
+        this.courseEventProducer = courseEventProducer;
     }
 
     /*
@@ -71,6 +75,17 @@ public class CourseServiceJpa {
     public CourseRecord create(CourseRecord courseRecord) {
         CourseEntity entity = toEntity(courseRecord);
         CourseEntity saved = courseRepositoryJpa.save(entity);
+
+        // Create and publish the Kafka event after the entity has been saved,
+        // because we need the generated database ID.
+        CourseCreatedEvent event = CourseCreatedEvent.of(
+                saved.getId(),
+                saved.getName(),
+                saved.getPrice(),
+                saved.getDifficulty()
+        );
+        courseEventProducer.publishCourseCreated(event);
+
         return toRecord(saved);
     }
 
