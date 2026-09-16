@@ -463,7 +463,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Kubernetes | [KUBERNETES.md](docs/KUBERNETES.md) |
 | Helm | [HELM.md](docs/HELM.md) |
 | Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
-| Kafka commands and experiments | [kafka.md](cheatsheets/kafka.md) |
+| Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
 
 ---
 
