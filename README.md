@@ -78,6 +78,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Helm | [HELM.md](docs/HELM.md) |
 | Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
 | Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
+| DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 
 ---
 
@@ -149,6 +150,20 @@ Event contracts / versioning    ✅
 Retry / DLT                     ✅
         ↓
 Idempotency                     ✅
+        ↓
+DDD fundamentals                 ✅
+        ↓
+Entities / Value Objects        ✅
+        ↓
+Aggregate Root / invariants     ✅
+        ↓
+Domain unit tests               ✅
+        ↓
+Inbound / outbound ports        ✅
+        ↓
+Application service             ✅
+        ↓
+Outbound adapters               🚧 CURRENT
         ↓
 DDD / Hexagonal                 🚧 CURRENT
         ↓
@@ -413,6 +428,73 @@ Current Kafka learning milestones include:
 
 ---
 
+
+# 🏛️ DDD / Hexagonal Architecture — Current Phase
+
+The current course phase is refactoring the **Enrollment Service** toward a domain-centered and hexagonal design while preserving the existing working application.
+
+Current direction:
+
+```text
+External world
+      ↓
+Inbound Adapter
+      ↓
+Inbound Port / Use Case
+      ↓
+Application Service
+      ├───────────────┐
+      ↓               ↓
+Domain Model     Outbound Ports
+                      ↓
+            Technical Adapters
+```
+
+The framework-free Enrollment domain currently contains:
+
+```text
+Enrollment                       Entity + Aggregate Root
+├── EnrollmentId                 Value Object
+├── CourseId                     Value Object
+├── StudentName                  Value Object
+├── EnrollmentStatus             Domain concept
+├── confirm()                    Domain behavior
+└── cancel()                     Domain behavior
+```
+
+The application layer currently contains:
+
+```text
+application
+└── port
+    ├── in
+    │   ├── CreateEnrollmentCommand
+    │   └── CreateEnrollmentUseCase
+    └── out
+        ├── SaveEnrollmentPort
+        └── CourseExistsPort
+```
+
+`CreateEnrollmentService` implements the inbound use case and orchestrates Course validation, domain construction and persistence through outbound ports.
+
+Pure unit tests now validate both the domain model and the application service without requiring Spring, MongoDB, Kafka, Docker or HTTP.
+
+The next step is the first real outbound adapter:
+
+```text
+SaveEnrollmentPort
+        ↑
+MongoEnrollmentAdapter
+        ↓
+existing Mongo repository
+        ↓
+MongoDB
+```
+
+Detailed notes: [DDD.md](docs/DDD.md)
+
+---
+
 # 🐳 Independent Containerization
 
 Both applications have independent Docker build boundaries.
@@ -628,7 +710,9 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Retry strategies, poison-pill handling and Dead Letter Topics
 * Idempotent consumers and duplicate-event handling
 * Domain-driven design
+* Entities, Value Objects, Aggregates and domain invariants
 * Hexagonal architecture
+* Inbound / outbound ports and adapters
 * Security
 * Testing
 * Observability
@@ -645,4 +729,5 @@ Backend Java Developer
 
 Technologies explored in this project include:
 
-`Java` · `Spring Boot` · `Spring Web` · `RestClient` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `GitHub Actions` · `GitHub Container Registry` · `Kubernetes` · `Helm` · `Microservices` · `Kafka`
+
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Hexagonal Architecture` · `Ports and Adapters`

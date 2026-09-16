@@ -223,10 +223,41 @@ After a milestone:
 
 # 🚧 Current — Architecture
 
+## DDD / Hexagonal Architecture
+
 - [ ] DDD
+    - [x] DDD fundamentals
+    - [x] Domain model separated from persistence model
+    - [x] Entity identity
+    - [x] Value Objects
+    - [x] Aggregate / Aggregate Root fundamentals
+    - [x] Domain invariants and behavior
+    - [x] Framework-free domain model
+    - [x] Pure domain unit tests
+    - [x] Domain logic vs application orchestration
 - [ ] Bounded Contexts
+    - [x] Identify Course and Enrollment as separate business contexts
+    - [ ] Formalize context boundaries and responsibilities
 - [ ] Hexagonal Architecture
+    - [x] Application layer introduced
+    - [x] Inbound port / use-case concept
+    - [x] Outbound port concept
+    - [x] Dependency inversion fundamentals
+    - [x] Framework-free application service
+    - [x] Application service unit tests with fake ports
+    - [ ] Outbound persistence adapter
+    - [ ] Domain ↔ MongoDB persistence mapping
+    - [ ] Outbound Course REST adapter
+    - [ ] Spring wiring / dependency configuration
+    - [ ] Refactor REST controller into inbound adapter
+    - [ ] End-to-end use-case validation through adapters
 - [ ] Ports and Adapters
+    - [x] `CreateEnrollmentUseCase`
+    - [x] `SaveEnrollmentPort`
+    - [x] `CourseExistsPort`
+    - [ ] MongoDB adapter
+    - [ ] Course REST adapter
+    - [ ] REST inbound adapter migration
 - [ ] Clean Architecture
 - [ ] API-first design
 
@@ -355,6 +386,22 @@ Retry / DLT                     ✅
 Idempotency                     ✅
         ↓
 Kafka / Event-Driven            ✅ 
+        ↓
+DDD fundamentals                ✅
+        ↓
+Entity / Value Objects          ✅
+        ↓
+Aggregate Root / invariants     ✅
+        ↓
+Pure domain tests               ✅
+        ↓
+Inbound / outbound ports        ✅
+        ↓
+Application service             ✅
+        ↓
+Outbound adapters               🚧 CURRENT
+        ↓
+Mongo mapping / REST adapter    ⏳
         ↓
 DDD / Hexagonal                 🚧 CURRENT
         ↓
