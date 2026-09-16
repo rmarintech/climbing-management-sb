@@ -238,10 +238,10 @@ services:
       --create
       --if-not-exists
       --topic course-events
-      --partitions 1
+      --partitions 2
       --replication-factor 1
       "
-
+    restart: "no"
 
 
 volumes:

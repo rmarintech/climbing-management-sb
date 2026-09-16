@@ -105,6 +105,144 @@ Partitions          = 1
 Replication factor  = 1
 ```
 
+These fields describe how Kafka stores and replicates a topic partition.
+
+### Partition
+
+A **partition** is one ordered piece of a Kafka topic.
+
+```text
+course-events
+└── Partition 0
+    ├── offset 0
+    ├── offset 1
+    └── offset 2
+```
+
+Kafka guarantees record ordering **within a partition**.
+
+Partitions also provide scalability and consumer parallelism.
+
+### Leader
+
+Every partition has one **leader broker**.
+
+The leader is the broker currently responsible for handling reads and writes for that partition.
+
+```text
+Partition 0
+    ↓
+Leader: Broker 1
+```
+
+In our current environment:
+
+```text
+Leader: 1
+```
+
+means Broker 1 is the leader for Partition 0.
+
+### Replicas
+
+`Replicas` lists all brokers that store that partition.
+
+The leader itself is included in this list.
+
+With:
+
+```text
+ReplicationFactor: 1
+Replicas: 1
+```
+
+we have:
+
+```text
+Partition 0
+    ↓
+Broker 1
+    ├── Leader
+    └── only replica
+```
+
+There is therefore no redundant copy.
+
+In a production-like cluster we might have:
+
+```text
+ReplicationFactor: 3
+Replicas: 1,2,3
+```
+
+meaning three brokers store that partition.
+
+### ISR — In-Sync Replicas
+
+`ISR` means **In-Sync Replicas**.
+
+These are the replicas that are currently sufficiently synchronized with the leader.
+
+Example:
+
+```text
+Leader:   1
+Replicas: 1,2,3
+ISR:      1,2,3
+```
+
+means all three replicas are currently in sync.
+
+If Broker 3 falls behind, we could temporarily see:
+
+```text
+Leader:   1
+Replicas: 1,2,3
+ISR:      1,2
+```
+
+Broker 3 still belongs to the replica set, but it is currently not in the ISR.
+
+### Current project
+
+Our current Kafka environment has:
+
+```text
+PartitionCount:     1
+ReplicationFactor:  1
+
+Partition: 0
+Leader:    1
+Replicas:  1
+ISR:       1
+```
+
+So:
+
+```text
+course-events
+      ↓
+Partition 0
+      ↓
+Broker 1
+├── Leader
+├── Replica
+└── In-Sync Replica
+```
+
+This is perfectly adequate for local learning, but it provides no broker redundancy.
+
+A useful distinction is:
+
+```text
+Replicas
+   ↓
+brokers that are supposed to contain the partition
+
+ISR
+   ↓
+replicas currently synchronized enough to participate safely
+```
 ---
 
 ## Topic, Partition and Offset
