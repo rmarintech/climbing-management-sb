@@ -77,10 +77,15 @@ Example:
 
 ```text
 Topic: course-events
-PartitionCount: 1
+PartitionCount: 2
 ReplicationFactor: 1
 
 Partition: 0
+Leader: 1
+Replicas: 1
+Isr: 1
+
+Partition: 1
 Leader: 1
 Replicas: 1
 Isr: 1
@@ -90,18 +95,17 @@ Meaning:
 
 ```text
 course-events
-      ↓
-Partition 0
-      ↓
-Leader broker 1
-      ↓
-Replica broker 1
+├── Partition 0
+│   └── Leader / Replica / ISR: broker 1
+│
+└── Partition 1
+    └── Leader / Replica / ISR: broker 1
 ```
 
 Current learning configuration:
 
 ```text
-Partitions          = 1
+Partitions          = 2
 Replication factor  = 1
 ```
 
@@ -205,13 +209,18 @@ Broker 3 still belongs to the replica set, but it is currently not in the ISR.
 
 ### Current project
 
-Our current Kafka environment has:
+Our current Kafka environment now has two partitions:
 
 ```text
-PartitionCount:     1
+PartitionCount:     2
 ReplicationFactor:  1
 
 Partition: 0
+Leader:    1
+Replicas:  1
+ISR:       1
+
+Partition: 1
 Leader:    1
 Replicas:  1
 ISR:       1
@@ -221,16 +230,20 @@ So:
 
 ```text
 course-events
-      ↓
-Partition 0
-      ↓
-Broker 1
-├── Leader
-├── Replica
-└── In-Sync Replica
+├── Partition 0
+│   └── Broker 1
+│       ├── Leader
+│       ├── Replica
+│       └── In-Sync Replica
+│
+└── Partition 1
+    └── Broker 1
+        ├── Leader
+        ├── Replica
+        └── In-Sync Replica
 ```
 
-This is perfectly adequate for local learning, but it provides no broker redundancy.
+Two partitions allow consumer parallelism, but `ReplicationFactor: 1` still means there is no broker redundancy.
 
 A useful distinction is:
 
@@ -609,24 +622,28 @@ LAG = 0
 ## Current Kafka Architecture
 
 ```text
-                   Course Service
-                        │
-                        │ CourseCreatedEvent
-                        ▼
-                  Kafka Producer
-                        │
-                        ▼
-                  course-events
-                        │
-                        ▼
-                     Kafka
-                        │
-                        ▼
-                Consumer Group
-               enrollment-service
-                        │
-                        ▼
-               Enrollment Service
+                         Course Service
+                              │
+                              │ CourseCreatedEvent
+                              ▼
+                        Kafka Producer
+                              │
+                              │ key = courseId
+                              ▼
+                         course-events
+                              │
+                      ┌───────┴───────┐
+                      │               │
+                Partition 0      Partition 1
+                      │               │
+                      └───────┬───────┘
+                              │
+                       Consumer Group
+                      enrollment-service
+                              │
+                  ┌───────────┴───────────┐
+                  │                       │
+           Enrollment #1           Enrollment #2
 ```
 
 Current status:
@@ -635,28 +652,35 @@ Current status:
 Kafka broker                ✅
 KRaft                       ✅
 Topic                       ✅
-Partition                   ✅
+Partitions                  ✅
 Offsets                     ✅
 Console Producer            ✅
 Console Consumer            ✅
 Spring Producer             ✅
 JSON serialization          ✅
 Spring Consumer             ✅
-Consumer Group              ✅
+Consumer Groups             ✅
 Committed offsets           ✅
 Lag / recovery              ✅
+Partition assignment        ✅
+Rebalancing                 ✅
+Consumer failover           ✅
+Parallel consumption        ✅
+Key / partition / offset    ✅
 ```
 
 Next:
 
 ```text
-Consumer Groups
+Event Contracts             🚧 CURRENT
       ↓
-Multiple consumers
+Contract evolution
       ↓
-Partition assignment
+Compatibility / versioning
       ↓
-Parallelism
+Retry strategy
+      ↓
+Idempotency
 ```
 
 ---
@@ -742,9 +766,28 @@ The listener subscribes by topic name:
 
 ```java
 @KafkaListener(topics = "course-events")
-public void consume(CourseCreatedEvent event) {
-    // process event
+public void consume(ConsumerRecord<String, CourseCreatedEvent> record) {
+    CourseCreatedEvent event = record.value();
+
+    log.info(
+            "CourseCreatedEvent consumed. key={}, courseId={}, partition={}, offset={}, name={}, difficulty={}",
+            record.key(),
+            event.courseId(),
+            record.partition(),
+            record.offset(),
+            event.name(),
+            event.difficulty()
+    );
 }
+```
+
+Using `ConsumerRecord` exposes the Kafka metadata alongside the deserialized payload:
+
+```text
+record.key()
+record.partition()
+record.offset()
+record.value()
 ```
 
 ---
@@ -879,7 +922,7 @@ Set group.protocol=consumer to try it out.
 
 This is informational, not an error.
 
-The current course still uses the configured consumer group normally while consumer-group rebalancing and partition assignment are studied in the next milestone.
+The project continued using the configured consumer group normally while partition assignment, rebalancing, failover, and parallel consumption were tested.
 
 ---
 
@@ -897,27 +940,31 @@ Console producer / consumer     ✅
 Spring producer                 ✅
 Spring consumer                 ✅
 JSON serialization              ✅
-Consumer group basics           ✅
+Consumer groups                 ✅
 Committed offsets               ✅
 Lag and recovery                ✅
+Multiple consumers              ✅
+Partition assignment            ✅
+Rebalancing                     ✅
+Consumer failover               ✅
+Parallel consumption            ✅
+Partition-local offsets         ✅
+ConsumerRecord metadata         ✅
 ```
 
 Current:
 
 ```text
-Consumer Groups                 🚧
+Event Contracts                 🚧
       ↓
-Multiple consumers
+Contract evolution
       ↓
-Partition assignment
-      ↓
-Parallelism
+Compatibility / versioning
 ```
 
 Still to cover:
 
 ```text
-Event contract evolution
 Retry strategy
 Idempotency
 ```
@@ -926,9 +973,11 @@ Idempotency
 
 ## Multiple Consumers, Partition Assignment and Parallelism
 
-Inside one consumer group, a partition is assigned to at most one consumer at a time.
+This milestone was tested with real Enrollment Service instances in the same consumer group.
 
-With one partition and two Enrollment instances in the same group:
+### One partition and two consumers
+
+Initially:
 
 ```text
 course-events
@@ -939,16 +988,82 @@ Consumer group: enrollment-service
 └── Enrollment #2
 ```
 
-Kafka can assign Partition 0 to only one of those consumers. The other consumer remains idle for that topic assignment.
+Kafka assigned the only partition to one consumer:
 
 ```text
-Partition 0 → Enrollment #1
-              Enrollment #2 idle
+Consumer #1
+#PARTITIONS = 1
+CURRENT-ASSIGNMENT = course-events:0
+
+Consumer #2
+#PARTITIONS = 0
+CURRENT-ASSIGNMENT = -
+```
+
+Therefore:
+
+```text
+Partition 0 → Consumer #1
+              Consumer #2 idle
+```
+
+The idle consumer was still connected to the group; it simply had no partition to consume.
+
+The key rule is:
+
+```text
+inside the same consumer group,
+one partition can be owned by only one consumer at a time
+```
+
+### Failover and rebalance
+
+When the active consumer was stopped, Kafka detected the group membership change and rebalanced the group.
+
+The previously idle consumer then logged:
+
+```text
+partitions assigned: [course-events-0]
+```
+
+Conceptually:
+
+```text
+Consumer #1 stops
+        ↓
+group membership changes
+        ↓
+Kafka rebalances
+        ↓
+Partition 0 → Consumer #2
+```
+
+This demonstrated automatic consumer failover.
+
+### Two partitions and two consumers
+
+The `course-events` topic was then changed to two partitions:
+
+```text
+course-events
+├── Partition 0
+└── Partition 1
+```
+
+When the second consumer joined, Kafka first revoked the existing assignments and then redistributed ownership.
+
+The resulting model was:
+
+```text
+Partition 0 → Consumer #1
+Partition 1 → Consumer #2
 ```
 
 or the reverse.
 
-The key relationship is:
+Now both consumers could work in parallel.
+
+The fundamental relationship is:
 
 ```text
 maximum useful consumers in one group
@@ -956,14 +1071,87 @@ maximum useful consumers in one group
 number of partitions assigned to the group
 ```
 
-With multiple partitions, Kafka can distribute partition ownership across consumers and process records in parallel.
+For this topic:
 
 ```text
-Partition 0 → Consumer #1
-Partition 1 → Consumer #2
-Partition 2 → Consumer #1 or #2
+2 partitions
++
+2 consumers
++
+same group
+=
+2 active consumers
 ```
 
-When consumers join, leave, crash, or restart—or when partitioning changes—Kafka can rebalance the group and recalculate partition assignments.
+### Record distribution is not broadcasting
 
-This is the current Kafka lesson: **consumer groups → partition assignment → rebalancing → parallelism**.
+A single Kafka record is written to exactly one partition.
+
+Two partitions do **not** mean the same event is copied to two consumers.
+
+Instead:
+
+```text
+event
+  ↓
+key = courseId
+  ↓
+Kafka partitioner
+  ↓
+one partition
+  ↓
+consumer that owns that partition
+```
+
+Real test results showed different Course IDs being handled by the two Enrollment instances.
+
+Example:
+
+```text
+Consumer A
+key=20, courseId=20, partition=0, offset=6
+key=21, courseId=21, partition=0, offset=7
+
+Consumer B
+key=19, courseId=19, partition=1, offset=3
+```
+
+This also proves that offsets are local to each partition:
+
+```text
+Partition 0
+offset 6
+offset 7
+
+Partition 1
+offset 3
+```
+
+There is no single global topic offset.
+
+### Rebalancing
+
+Kafka may rebalance when:
+
+```text
+consumer joins
+consumer leaves
+consumer crashes
+consumer restarts
+partition count changes
+```
+
+During a rebalance, existing assignments may be revoked and Kafka calculates new partition ownership.
+
+This milestone demonstrated:
+
+```text
+Consumer Groups          ✅
+Partition assignment     ✅
+Rebalancing              ✅
+Consumer failover        ✅
+Parallelism              ✅
+Partition-local offsets  ✅
+```
+
+The next Kafka lesson is **Event Contracts and schema evolution**.

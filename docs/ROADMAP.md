@@ -195,7 +195,11 @@ After a milestone:
 - [x] Apache Kafka
 - [x] Producers
 - [x] Consumers
-- [ ] Consumer groups
+- [x] Consumer groups
+- [x] Committed offsets and lag
+- [x] Partition assignment
+- [x] Rebalancing and consumer failover
+- [x] Consumer parallelism
 - [ ] Event contracts
 - [ ] Retry strategy
 - [ ] Idempotency
@@ -319,9 +323,15 @@ Spring producer                 ✅
         ↓
 Spring consumer                 ✅
         ↓
-Consumer groups                 🚧 CURRENT
+Consumer groups                 ✅
         ↓
-Event contracts                 ⏳
+Partition assignment            ✅
+        ↓
+Rebalancing / failover          ✅
+        ↓
+Consumer parallelism            ✅
+        ↓
+Event contracts                 🚧 CURRENT
         ↓
 Retry strategy                  ⏳
         ↓

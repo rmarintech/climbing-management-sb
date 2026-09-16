@@ -61,7 +61,107 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 
 ---
 
-# 🏗️ Current Technical Picture
+# 📚 Detailed Documentation
+
+Detailed learning material is split by technology so examples are not duplicated between files.
+
+| Topic | Documentation |
+| --- | --- |
+| Course/project progress | [ROADMAP.md](docs/ROADMAP.md) |
+| How to maintain these docs | [MAINTENANCE.md](docs/MAINTENANCE.md) |
+| Spring Boot, REST, validation, exceptions | [SPRING_BOOT_REST.md](docs/SPRING_BOOT_REST.md) |
+| PostgreSQL, JPA, transactions, locking | [POSTGRESQL_JPA.md](docs/POSTGRESQL_JPA.md) |
+| MongoDB | [MONGODB.md](docs/MONGODB.md) |
+| Docker | [DOCKER.md](docs/DOCKER.md) |
+| CI/CD | [CICD.md](docs/CICD.md) |
+| Kubernetes | [KUBERNETES.md](docs/KUBERNETES.md) |
+| Helm | [HELM.md](docs/HELM.md) |
+| Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
+| Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
+
+---
+
+# 🗺️ Current Position
+
+```text
+Java / Spring Boot              ✅
+        ↓
+PostgreSQL / JPA                ✅
+        ↓
+Transactions / Locking          ✅
+        ↓
+MongoDB                         ✅
+        ↓
+Docker                          ✅
+        ↓
+CI/CD                           ✅
+        ↓
+Kubernetes                      ✅
+        ↓
+Namespaces                      ✅
+        ↓
+Helm                            ✅
+        ↓
+Microservice extraction         ✅
+        ↓
+Independent persistence         ✅
+        ↓
+REST communication              ✅
+        ↓
+Failure isolation               ✅
+        ↓
+Timeouts                        ✅
+        ↓
+Retries                         ✅
+        ↓
+Circuit Breaker                 ✅
+        ↓
+Resilience                      ✅
+        ↓
+Independent containerization    ✅
+        ↓
+Independent Kubernetes deploy   ✅
+        ↓
+Independent GHCR images         ✅
+        ↓
+Independent deployment          ✅
+        ↓
+Microservices                   ✅ COMPLETE
+        ↓
+Kafka / Event-Driven            🚧 CURRENT
+        ↓
+Kafka broker / KRaft            ✅
+        ↓
+Topics / partitions / offsets   ✅
+        ↓
+Spring producer / consumer      ✅
+        ↓
+Consumer groups                 ✅
+        ↓
+Partition assignment            ✅
+        ↓
+Rebalancing / failover          ✅
+        ↓
+Consumer parallelism            ✅
+        ↓
+Event contracts                 🚧 CURRENT
+        ↓
+DDD / Hexagonal                 ⏳
+        ↓
+Security                        ⏳
+        ↓
+Testing                         ⏳
+        ↓
+Advanced Backend Engineering    ⏳
+        ↓
+System Design                   ⏳
+```
+
+For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
+
+---
+
+# 🏗️ Technical Picture
 
 The project currently contains two independent Spring Boot applications inside the same Git repository.
 
@@ -248,16 +348,20 @@ KafkaTemplate
 course-events
 ```
 
-The Enrollment Service consumes that event independently:
+The Enrollment Service consumes that event independently. The local learning topic now has two partitions, allowing two consumers in the same group to work in parallel:
 
 ```text
-course-events
-        ↓
-Consumer Group: enrollment-service
-        ↓
-@KafkaListener
-        ↓
-Enrollment Service
+                     course-events
+                    /             \
+             Partition 0       Partition 1
+                  │                 │
+                  └───────┬─────────┘
+                          │
+             Consumer Group: enrollment-service
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+          Enrollment #1     Enrollment #2
 ```
 
 This gives the project both communication styles:
@@ -278,13 +382,18 @@ Current Kafka learning milestones include:
 
 * Kafka 4.3 running in KRaft mode
 * Reproducible `course-events` topic initialization
-* Topics, partitions and offsets
+* Topics, partitions and partition-local offsets
 * Spring Kafka producer with `KafkaTemplate`
 * JSON event serialization
 * Spring Kafka consumer with `@KafkaListener`
 * Consumer group `enrollment-service`
 * Committed offsets and consumer lag
 * Consumer outage and catch-up recovery
+* Multiple consumers in the same group
+* Partition assignment and group rebalancing
+* Automatic consumer failover
+* Two-partition parallel consumption
+* Kafka key, partition and offset inspection through `ConsumerRecord`
 * Producer and consumer event contracts owned independently by each service
 
 ---
@@ -447,98 +556,6 @@ The manual learning deployments currently use `latest`, while immutable commit-S
 
 ---
 
-# 📚 Detailed Documentation
-
-Detailed learning material is split by technology so examples are not duplicated between files.
-
-| Topic | Documentation |
-| --- | --- |
-| Course/project progress | [ROADMAP.md](docs/ROADMAP.md) |
-| How to maintain these docs | [MAINTENANCE.md](docs/MAINTENANCE.md) |
-| Spring Boot, REST, validation, exceptions | [SPRING_BOOT_REST.md](docs/SPRING_BOOT_REST.md) |
-| PostgreSQL, JPA, transactions, locking | [POSTGRESQL_JPA.md](docs/POSTGRESQL_JPA.md) |
-| MongoDB | [MONGODB.md](docs/MONGODB.md) |
-| Docker | [DOCKER.md](docs/DOCKER.md) |
-| CI/CD | [CICD.md](docs/CICD.md) |
-| Kubernetes | [KUBERNETES.md](docs/KUBERNETES.md) |
-| Helm | [HELM.md](docs/HELM.md) |
-| Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
-| Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
-
----
-
-# 🗺️ Current Position
-
-```text
-Java / Spring Boot              ✅
-        ↓
-PostgreSQL / JPA                ✅
-        ↓
-Transactions / Locking          ✅
-        ↓
-MongoDB                         ✅
-        ↓
-Docker                          ✅
-        ↓
-CI/CD                           ✅
-        ↓
-Kubernetes                      ✅
-        ↓
-Namespaces                      ✅
-        ↓
-Helm                            ✅
-        ↓
-Microservice extraction         ✅
-        ↓
-Independent persistence         ✅
-        ↓
-REST communication              ✅
-        ↓
-Failure isolation               ✅
-        ↓
-Timeouts                        ✅
-        ↓
-Retries                         ✅
-        ↓
-Circuit Breaker                 ✅
-        ↓
-Resilience                      ✅
-        ↓
-Independent containerization    ✅
-        ↓
-Independent Kubernetes deploy   ✅
-        ↓
-Independent GHCR images         ✅
-        ↓
-Independent deployment          ✅
-        ↓
-Microservices                   ✅ COMPLETE
-        ↓
-Kafka / Event-Driven            🚧 CURRENT
-        ↓
-Kafka broker / KRaft            ✅
-        ↓
-Topics / partitions / offsets   ✅
-        ↓
-Spring producer / consumer      ✅
-        ↓
-Consumer groups                 🚧 CURRENT
-        ↓
-DDD / Hexagonal                 ⏳
-        ↓
-Security                        ⏳
-        ↓
-Testing                         ⏳
-        ↓
-Advanced Backend Engineering    ⏳
-        ↓
-System Design                   ⏳
-```
-
-For detailed progress, use **only** [ROADMAP.md](docs/ROADMAP.md).
-
----
-
 # 🎯 Learning Approach
 
 Each major topic is learned using the same practical loop:
@@ -591,7 +608,7 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Resilience patterns
 * Event-driven architecture
 * Apache Kafka / Spring Kafka
-* Consumer groups, offsets and lag
+* Consumer groups, partition assignment, rebalancing, offsets, lag and parallelism
 * Domain-driven design
 * Hexagonal architecture
 * Security
