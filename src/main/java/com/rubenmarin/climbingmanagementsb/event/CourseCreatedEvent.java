@@ -7,7 +7,7 @@ import java.util.UUID;
 
 /**
  * Event published when a new Course has been successfully created.
- *
+ * <p>
  * This is an event contract, not a persistence entity or REST DTO.
  */
 
@@ -19,12 +19,19 @@ import java.util.UUID;
 
 public record CourseCreatedEvent(
         UUID eventId,
+        String eventType,
+        Integer eventVersion,
+        String sourceService,
         Instant occurredAt,
         Long courseId,
         String name,
         Double price,
         Difficulty difficulty
 ) {
+
+    private static final String EVENT_TYPE = "COURSE_CREATED";
+    private static final int EVENT_VERSION = 2;
+    private static final String SOURCE_SERVICE = "course-service";
 
     public static CourseCreatedEvent of(
             Long courseId,
@@ -34,6 +41,9 @@ public record CourseCreatedEvent(
     ) {
         return new CourseCreatedEvent(
                 UUID.randomUUID(),
+                EVENT_TYPE,
+                EVENT_VERSION,
+                SOURCE_SERVICE,
                 Instant.now(),
                 courseId,
                 name,
