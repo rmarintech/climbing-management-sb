@@ -69,6 +69,34 @@ creates course-events
 exits successfully
 ```
 
+### Inspect the Docker Kafka environment
+
+```powershell
+docker compose ps -a
+```
+
+Useful for confirming that:
+
+```text
+kafka        → running / healthy
+kafka-init   → exited successfully
+```
+
+Inspect recent broker logs:
+
+```powershell
+docker compose logs kafka --tail 50
+```
+
+List the topics currently known by the broker:
+
+```powershell
+docker exec kafka /opt/kafka/bin/kafka-topics.sh `
+    --bootstrap-server localhost:18082 `
+    --list
+```
+
+
 ---
 
 ## Describe the Course Events Topic
@@ -245,6 +273,27 @@ course-events
 
 Two partitions allow consumer parallelism, but `ReplicationFactor: 1` still means there is no broker redundancy.
 
+### Inspect partitions, leader, replicas and ISR
+
+```powershell
+docker exec kafka /opt/kafka/bin/kafka-topics.sh `
+    --bootstrap-server localhost:18082 `
+    --describe `
+    --topic course-events
+```
+
+The output is the source for values such as:
+
+```text
+PartitionCount
+ReplicationFactor
+Partition
+Leader
+Replicas
+Isr
+```
+
+
 A useful distinction is:
 
 ```text
@@ -322,6 +371,22 @@ Kafka Record
 ├── key   = "5"
 └── value = CourseCreatedEvent JSON
 ```
+
+### Display key, partition and offset
+
+```powershell
+docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh `
+    --bootstrap-server localhost:18082 `
+    --topic course-events `
+    --from-beginning `
+    --formatter-property print.key=true `
+    --formatter-property key.separator=" | " `
+    --formatter-property print.partition=true `
+    --formatter-property print.offset=true
+```
+
+This lets you inspect the physical Kafka metadata discussed above rather than only the JSON payload.
+
 
 ---
 
@@ -413,7 +478,7 @@ POST /jpa/courses
         ↓
 Course Service
         ↓
-PostgreSQL
+    PostgreSQL
         ↓
 CourseCreatedEvent
         ↓
@@ -421,7 +486,7 @@ Kafka Producer
         ↓
 course-events
         ↓
-Kafka
+      Kafka
         ↓
 Enrollment Consumer
         ↓
@@ -492,6 +557,24 @@ offset 2 ✅
 
 next expected position = 3
 ```
+
+### Inspect committed offsets and lag
+
+```powershell
+docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh `
+    --bootstrap-server localhost:18082 `
+    --describe `
+    --group enrollment-service
+```
+
+The important columns are:
+
+```text
+CURRENT-OFFSET
+LOG-END-OFFSET
+LAG
+```
+
 
 ---
 
@@ -587,12 +670,12 @@ This is one of the major benefits of asynchronous communication.
 
 ```text
 Kafka Topic
-    ↓
-records remain stored
+      ↓
+Records remain stored
 
 Consumer Group
-    ↓
-tracks processing progress
+       ↓
+Tracks processing progress
 ```
 
 During an outage:
@@ -600,7 +683,7 @@ During an outage:
 ```text
 Enrollment DOWN
       ↓
-events accumulate
+Events accumulate
       ↓
 LAG increases
 ```
@@ -619,7 +702,7 @@ LAG = 0
 
 ---
 
-## Current Kafka Architecture
+## Kafka Architecture
 
 ```text
                          Course Service
@@ -641,17 +724,17 @@ LAG = 0
                        Consumer Group
                       enrollment-service
                               │
-                  ┌───────────┴───────────┐
-                  │                       │
-           Enrollment #1           Enrollment #2
+                    Enrollment consumer
 ```
+
+During the consumer-group parallelism experiment, a second Enrollment instance was started temporarily so Kafka could assign one partition to each consumer.
 
 Current status:
 
 ```text
 Kafka broker                ✅
 KRaft                       ✅
-Topic                       ✅
+Topics                      ✅
 Partitions                  ✅
 Offsets                     ✅
 Console Producer            ✅
@@ -667,20 +750,25 @@ Rebalancing                 ✅
 Consumer failover           ✅
 Parallel consumption        ✅
 Key / partition / offset    ✅
+Event contracts             ✅
+Schema evolution            ✅
+Compatibility / versioning  ✅
+Retry strategy              ✅
+Dead Letter Topic           ✅
+Poison-pill handling        ✅
+Idempotency                 ✅
 ```
 
-Next:
+Kafka / Event-Driven Architecture is now complete for the current course scope.
+
+Next major phase:
 
 ```text
-Event Contracts             🚧 CURRENT
+DDD / Bounded Contexts
       ↓
-Contract evolution
+Hexagonal Architecture
       ↓
-Compatibility / versioning
-      ↓
-Retry strategy
-      ↓
-Idempotency
+Ports and Adapters
 ```
 
 ---
@@ -747,7 +835,13 @@ Common consumer configuration:
 spring.kafka.consumer.group-id=enrollment-service
 
 spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
-spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+
+# Wrap deserialization failures so they can be handled by the listener container
+# and eventually routed to the DLT.
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+
+# Actual JSON deserializer used by ErrorHandlingDeserializer.
+spring.kafka.consumer.properties[spring.deserializer.value.delegate.class]=org.springframework.kafka.support.serializer.JacksonJsonDeserializer
 
 # Deserialize JSON into Enrollment's own event class.
 spring.kafka.consumer.properties[spring.json.value.default.type]=com.rubenmarin.enrollmentservice.event.CourseCreatedEvent
@@ -815,6 +909,9 @@ Current event shape:
 ```json
 {
   "eventId": "b3d988fc-63a7-4265-8327-ac38756e09be",
+  "eventType": "COURSE_CREATED",
+  "eventVersion": 2,
+  "sourceService": "course-service",
   "occurredAt": "2026-09-15T09:29:31.536713100Z",
   "courseId": 5,
   "name": "Kafka Sport Climbing",
@@ -904,69 +1001,9 @@ CourseCreatedEvent
         ↓
 JacksonJsonSerializer
         ↓
-Jackson 3
+    Jackson 3
         ↓
-Kafka
-```
-
----
-
-## KIP-848 Console Message
-
-Kafka 4.3 may print:
-
-```text
-The consumer rebalance protocol (KIP-848) is production-ready!
-Set group.protocol=consumer to try it out.
-```
-
-This is informational, not an error.
-
-The project continued using the configured consumer group normally while partition assignment, rebalancing, failover, and parallel consumption were tested.
-
----
-
-## Current Learning Position
-
-Completed:
-
-```text
-Synchronous vs asynchronous     ✅
-Kafka / KRaft                   ✅
-Topics                          ✅
-Partitions                      ✅
-Offsets                         ✅
-Console producer / consumer     ✅
-Spring producer                 ✅
-Spring consumer                 ✅
-JSON serialization              ✅
-Consumer groups                 ✅
-Committed offsets               ✅
-Lag and recovery                ✅
-Multiple consumers              ✅
-Partition assignment            ✅
-Rebalancing                     ✅
-Consumer failover               ✅
-Parallel consumption            ✅
-Partition-local offsets         ✅
-ConsumerRecord metadata         ✅
-```
-
-Current:
-
-```text
-Event Contracts                 🚧
-      ↓
-Contract evolution
-      ↓
-Compatibility / versioning
-```
-
-Still to cover:
-
-```text
-Retry strategy
-Idempotency
+      Kafka
 ```
 
 ---
@@ -1040,6 +1077,28 @@ Partition 0 → Consumer #2
 
 This demonstrated automatic consumer failover.
 
+### Inspect group members and partition assignments
+
+```powershell
+docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh `
+    --bootstrap-server localhost:18082 `
+    --describe `
+    --group enrollment-service `
+    --members `
+    --verbose
+```
+
+This is the command used to observe:
+
+```text
+consumer members
+#PARTITIONS
+CURRENT-ASSIGNMENT
+```
+
+and to verify reassignment after a consumer joins or leaves.
+
+
 ### Two partitions and two consumers
 
 The `course-events` topic was then changed to two partitions:
@@ -1075,11 +1134,11 @@ For this topic:
 
 ```text
 2 partitions
-+
+    +
 2 consumers
-+
+    +
 same group
-=
+    =
 2 active consumers
 ```
 
@@ -1154,4 +1213,405 @@ Parallelism              ✅
 Partition-local offsets  ✅
 ```
 
-The next Kafka lesson is **Event Contracts and schema evolution**.
+The consumer-group milestone was followed by **Event Contracts and schema evolution**, documented below.
+
+
+---
+
+## Event Contract Versioning and Schema Evolution
+
+The event contract evolved from an initial unversioned shape to an explicit versioned contract.
+
+Current metadata:
+
+```text
+eventType     = COURSE_CREATED
+eventVersion  = 2
+sourceService = course-service
+```
+
+### Compatible additive evolution
+
+The producer moved from V1 to V2 by adding `sourceService`. An older Enrollment consumer without that field still deserialized the V2 event successfully because the additional field could be ignored.
+
+```text
+New producer V2
+      ↓
+extra field: sourceService
+      ↓
+old consumer
+      ↓
+unknown field ignored
+      ↓
+works ✅
+```
+
+The consumer was then updated to include `sourceService`, and an old V1 event was replayed. The result was:
+
+```text
+eventVersion=1
+sourceService=null
+```
+
+The new consumer could still process the old event.
+
+### Replay an old V1 contract
+
+Start the console producer:
+
+```powershell
+docker exec -it kafka /opt/kafka/bin/kafka-console-producer.sh `
+    --bootstrap-server localhost:18082 `
+    --topic course-events
+```
+
+Then paste:
+
+```json
+{"eventId":"11111111-1111-1111-1111-111111111111","eventType":"COURSE_CREATED","eventVersion":1,"occurredAt":"2026-09-16T08:00:00Z","courseId":9001,"name":"Kafka Contract V1 Replay","price":170.0,"difficulty":"MEDIUM"}
+```
+
+The V2 consumer should deserialize it with:
+
+```text
+eventVersion=1
+sourceService=null
+```
+
+
+### Breaking schema evolution
+
+A deliberately incompatible event changed `price` from a number to an incompatible string:
+
+```json
+"price": "ONE HUNDRED SEVENTY EUROS"
+```
+
+The consumer still expected `Double price`, so deserialization failed.
+
+### Reproduce the breaking schema error
+
+Start the console producer:
+
+```powershell
+docker exec -it kafka /opt/kafka/bin/kafka-console-producer.sh `
+    --bootstrap-server localhost:18082 `
+    --topic course-events
+```
+
+Then paste the incompatible event:
+
+```json
+{"eventId":"22222222-2222-2222-2222-222222222222","eventType":"COURSE_CREATED","eventVersion":3,"sourceService":"course-service","occurredAt":"2026-09-16T09:00:00Z","courseId":9002,"name":"Kafka Broken Contract","price":"ONE HUNDRED SEVENTY EUROS","difficulty":"MEDIUM"}
+```
+
+
+```text
+Kafka JSON
+      ↓
+incompatible field type
+      ↓
+JacksonJsonDeserializer
+      ↓
+DeserializationException ❌
+```
+
+A useful rule is:
+
+```text
+Usually safer
+├── add optional fields
+└── add fields consumers can ignore
+
+Potentially breaking
+├── remove fields
+├── rename fields
+├── change field types
+├── change field meaning
+└── add required fields old data cannot provide
+```
+
+---
+
+## Error Handling, Retry Strategy and Dead Letter Topic
+
+The breaking schema experiment produced a poison-pill record that could not be deserialized.
+
+The consumer now uses:
+
+```text
+ErrorHandlingDeserializer
+      ↓
+JacksonJsonDeserializer
+```
+
+Valid events that fail during listener processing use:
+
+```text
+DefaultErrorHandler
+      ↓
+FixedBackOff(1000 ms, 2 retries)
+      ↓
+DeadLetterPublishingRecoverer
+      ↓
+course-events-dlt
+```
+
+The Docker Kafka initialization creates two partitions for both the source topic and its DLT:
+
+```text
+course-events
+├── Partition 0
+└── Partition 1
+
+course-events-dlt
+├── Partition 0
+└── Partition 1
+```
+
+### Deserialization failure
+
+Malformed records fail before the listener method and are treated as non-retryable/fatal by default.
+
+```text
+bad bytes / incompatible schema
+      ↓
+ErrorHandlingDeserializer
+      ↓
+DeserializationException
+      ↓
+DeadLetterPublishingRecoverer
+      ↓
+course-events-dlt
+```
+
+The DLT preserves diagnostic headers such as original topic, partition, offset, consumer group, exception class, exception message, and stack trace.
+
+### Inspect the Dead Letter Topic
+
+Describe it:
+
+```powershell
+docker exec kafka /opt/kafka/bin/kafka-topics.sh `
+    --bootstrap-server localhost:18082 `
+    --describe `
+    --topic course-events-dlt
+```
+
+Consume DLT records together with their diagnostic headers:
+
+```powershell
+docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh `
+    --bootstrap-server localhost:18082 `
+    --topic course-events-dlt `
+    --from-beginning `
+    --formatter-property print.key=true `
+    --formatter-property print.partition=true `
+    --formatter-property print.offset=true `
+    --formatter-property print.headers=true
+```
+
+
+### Processing failure
+
+A learning experiment deliberately threw a `RuntimeException` inside the listener. With:
+
+```java
+new FixedBackOff(1000L, 2L)
+```
+
+the observed flow was:
+
+```text
+initial attempt
+      ↓
+    fails
+      ↓
+    retry 1
+      ↓
+    fails
+      ↓
+    retry 2
+      ↓
+    fails
+      ↓
+     DLT
+```
+
+Two retries means three total processing attempts: one original attempt plus two retries.
+
+### Trigger the processing retry experiment
+
+With the temporary `"Kafka Retry Test"` failure block enabled in `CourseEventConsumer`:
+
+```powershell
+$body = @{
+    name = "Kafka Retry Test"
+    price = 160.0
+    difficulty = "MEDIUM"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+    -Method Post `
+    -Uri "http://localhost:8080/jpa/courses" `
+    -ContentType "application/json" `
+    -Body $body
+```
+
+Then watch the Enrollment logs for the initial attempt, the two retries, and final DLT recovery.
+
+
+A `RetryListener` was added so failed deliveries, successful recovery, and recovery failure are visible in logs.
+
+### DLT and consumer progress
+
+Once a failed record is successfully recovered to the DLT, the original consumer group can advance past that offset. The original record is not deleted from Kafka; the consumer group's committed position moves forward while the failed copy and diagnostics remain in the DLT.
+
+---
+
+## Idempotent Consumer
+
+Kafka can redeliver records, so the consumer must tolerate the same logical event arriving more than once.
+
+The event already contains a unique:
+
+```text
+eventId
+```
+
+This identifies the event itself and is different from `courseId`, because one Course can eventually produce many events.
+
+Enrollment stores processed event IDs in MongoDB:
+
+```text
+processed_kafka_events
+```
+
+with:
+
+```text
+_id = eventId
+```
+
+The document stores `eventId`, `eventType`, and `processedAt`.
+
+Because UUID values are persisted to MongoDB, Enrollment explicitly configures:
+
+```properties
+spring.mongodb.representation.uuid=standard
+```
+
+Without it, the MongoDB Java driver raised:
+
+```text
+CodecConfigurationException:
+The uuidRepresentation has not been specified,
+so the UUID cannot be encoded.
+```
+
+The current learning flow is:
+
+```text
+event arrives
+      ↓
+wasAlreadyProcessed(eventId)?
+      ├── yes → skip duplicate
+      │
+      └── no
+           ↓
+       process event
+           ↓
+       markAsProcessed(event)
+```
+
+The same `eventId` was published twice. The first delivery was processed and stored; the second was detected and skipped.
+
+### Reproduce the duplicate-event test
+
+Open a console producer:
+
+```powershell
+docker exec -it kafka /opt/kafka/bin/kafka-console-producer.sh `
+    --bootstrap-server localhost:18082 `
+    --topic course-events
+```
+
+Paste the exact same event twice:
+
+```json
+{"eventId":"33333333-3333-3333-3333-333333333333","eventType":"COURSE_CREATED","eventVersion":2,"sourceService":"course-service","occurredAt":"2026-09-16T13:00:00Z","courseId":9003,"name":"Kafka Idempotency Test","price":175.0,"difficulty":"MEDIUM"}
+```
+
+Expected behavior:
+
+```text
+first record  → processed
+second record → duplicate skipped
+```
+
+Inspect the persisted event marker in MongoDB:
+
+```powershell
+docker compose exec mongo mongosh
+```
+
+Then:
+
+```javascript
+use enrollment_management
+
+db.processed_kafka_events.find().pretty()
+```
+
+The collection should contain the processed `eventId`.
+
+
+```text
+eventId=33333333-3333-3333-3333-333333333333
+
+offset 8 → processed
+offset 9 → duplicate skipped
+```
+
+### Production nuance
+
+The current learning flow is not fully atomic because the business work and processed-event marker are separate operations. A stronger Inbox / Idempotent Consumer design would place the business changes and processed-event marker in the same MongoDB transaction so they commit or roll back together.
+
+---
+
+## Kafka Phase Complete
+
+The Kafka phase now covers:
+
+```text
+Synchronous vs asynchronous communication
+Kafka / KRaft
+Topics
+Partitions
+Offsets
+Record keys
+Spring producer
+Spring consumer
+Consumer groups
+Committed offsets
+Lag and recovery
+Partition assignment
+Rebalancing and failover
+Parallel consumption
+Event contracts
+Event type / version
+Schema evolution
+Compatibility testing
+Breaking schema changes
+ErrorHandlingDeserializer
+Retry strategy
+Fixed backoff
+Dead Letter Topic
+Poison-pill handling
+Retry diagnostics
+EventId-based idempotency
+MongoDB processed-event persistence
+Duplicate detection and skipping
+```
+
+

@@ -1,4 +1,4 @@
-# Climbing Management API
+# Course Management API
 
 A backend application built with **Java 21 and Spring Boot** to manage climbing courses.
 
@@ -126,9 +126,9 @@ Independent GHCR images         ✅
         ↓
 Independent deployment          ✅
         ↓
-Microservices                   ✅ COMPLETE
+Microservices                   ✅ 
         ↓
-Kafka / Event-Driven            🚧 CURRENT
+Kafka / Event-Driven            ✅ 
         ↓
 Kafka broker / KRaft            ✅
         ↓
@@ -144,9 +144,13 @@ Rebalancing / failover          ✅
         ↓
 Consumer parallelism            ✅
         ↓
-Event contracts                 🚧 CURRENT
+Event contracts / versioning    ✅
         ↓
-DDD / Hexagonal                 ⏳
+Retry / DLT                     ✅
+        ↓
+Idempotency                     ✅
+        ↓
+DDD / Hexagonal                 🚧 CURRENT
         ↓
 Security                        ⏳
         ↓
@@ -218,7 +222,7 @@ Circuit Breaker
 CourseClient
         │
         ▼
-Retry
+      Retry
         │
         ▼
 RestClient
@@ -255,7 +259,7 @@ The Enrollment Service now has its own:
 * Kubernetes Deployment
 * Kubernetes Service
 * Kubernetes ConfigMap
-* deployment lifecycle
+* Deployment lifecycle
 
 Current Enrollment API:
 
@@ -274,16 +278,16 @@ The Enrollment Service communicates synchronously with the Course application us
 Enrollment Service
         │
         ▼
-CourseClient
+    CourseClient
         │
         ▼
 Spring RestClient
         │
         ▼
-Course API
+    Course API
 ```
 
-Because remote calls can fail in ways that local Java method calls cannot, the project implements resilience mechanisms around this communication.
+Because remote calls can fail in ways that local Java method calls cannot, the project implements **resilience** mechanisms around this communication.
 
 ```text
 Remote call
@@ -302,11 +306,11 @@ Enrollment request
         ↓
 Circuit Breaker
         ↓
-CourseClient
+    CourseClient
         ↓
-@Retryable
+    @Retryable
         ↓
-RestClient
+    RestClient
         ↓
 Course Service
 ```
@@ -367,15 +371,15 @@ The Enrollment Service consumes that event independently. The local learning top
 This gives the project both communication styles:
 
 ```text
-Synchronous REST
+Synchronous REST:
 Enrollment → Course
         ↓
-caller waits for an immediate answer
+Caller waits for an immediate answer
 
-Asynchronous Kafka
+Asynchronous Kafka:
 Course → Kafka → Enrollment
         ↓
-consumer can process the event later
+Consumer can process the event later
 ```
 
 Current Kafka learning milestones include:
@@ -395,6 +399,17 @@ Current Kafka learning milestones include:
 * Two-partition parallel consumption
 * Kafka key, partition and offset inspection through `ConsumerRecord`
 * Producer and consumer event contracts owned independently by each service
+* Explicit event type and contract version
+* Additive schema evolution and compatibility testing
+* Breaking schema-change experiment
+* `ErrorHandlingDeserializer` for deserialization failures
+* Bounded processing retries with fixed backoff
+* `course-events-dlt` Dead Letter Topic
+* Poison-pill recovery without blocking partition progress
+* Retry diagnostics through `RetryListener`
+* EventId-based idempotent consumer
+* MongoDB `processed_kafka_events` deduplication store
+* Duplicate-event detection and skipping
 
 ---
 
@@ -405,9 +420,9 @@ Both applications have independent Docker build boundaries.
 ```text
 Course application
         ↓
-Dockerfile
+    Dockerfile
         ↓
-Course image
+   Course image
 ```
 
 and:
@@ -415,7 +430,7 @@ and:
 ```text
 Enrollment Service
         ↓
-Dockerfile
+    Dockerfile
         ↓
 Enrollment image
 ```
@@ -507,10 +522,10 @@ This makes it possible to test both environments independently.
 GitHub Actions builds and tests both Spring Boot applications.
 
 ```text
-Git push
-    ↓
-GitHub Actions
-    ↓
+        Git push
+            ↓
+        GitHub Actions
+            ↓
 ┌──────────────────────────┐
 │                          │
 ▼                          ▼
@@ -523,7 +538,7 @@ Course JAR            Enrollment JAR
 Course image          Enrollment image
 │                          │
 ▼                          ▼
-GHCR                   GHCR
+GHCR                     GHCR
 ```
 
 The Course image is published as:
@@ -609,6 +624,9 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Event-driven architecture
 * Apache Kafka / Spring Kafka
 * Consumer groups, partition assignment, rebalancing, offsets, lag and parallelism
+* Event contracts, schema evolution and versioning
+* Retry strategies, poison-pill handling and Dead Letter Topics
+* Idempotent consumers and duplicate-event handling
 * Domain-driven design
 * Hexagonal architecture
 * Security

@@ -189,10 +189,12 @@ After a milestone:
 
 ---
 
-# 🚧 Current — Event-Driven Architecture
+## Event-Driven Architecture / Kafka
 
 - [x] Synchronous vs asynchronous
 - [x] Apache Kafka
+- [x] KRaft
+- [x] Topics / partitions / offsets
 - [x] Producers
 - [x] Consumers
 - [x] Consumer groups
@@ -200,13 +202,26 @@ After a milestone:
 - [x] Partition assignment
 - [x] Rebalancing and consumer failover
 - [x] Consumer parallelism
-- [ ] Event contracts
-- [ ] Retry strategy
-- [ ] Idempotency
+- [x] `ConsumerRecord` metadata
+- [x] Event contracts
+- [x] Event type and version
+- [x] Schema evolution
+- [x] Forward / backward compatibility
+- [x] Breaking contract experiment
+- [x] `ErrorHandlingDeserializer`
+- [x] Retry strategy
+- [x] Fixed backoff
+- [x] Dead Letter Topic
+- [x] Poison-pill handling
+- [x] Retry diagnostics
+- [x] Idempotency
+- [x] EventId deduplication
+- [x] MongoDB processed-event persistence
+- [x] Duplicate skipping
 
 ---
 
-# 🔜 Architecture
+# 🚧 Current — Architecture
 
 - [ ] DDD
 - [ ] Bounded Contexts
@@ -313,7 +328,7 @@ Independent GHCR images         ✅
         ↓
 Independent deployment          ✅
         ↓
-Microservices                   ✅ COMPLETE
+Microservices                   ✅ 
         ↓
 Kafka broker / KRaft            ✅
         ↓
@@ -331,13 +346,17 @@ Rebalancing / failover          ✅
         ↓
 Consumer parallelism            ✅
         ↓
-Event contracts                 🚧 CURRENT
+Event contracts                 ✅
         ↓
-Retry strategy                  ⏳
+Schema evolution                ✅
         ↓
-Idempotency                     ⏳
+Retry / DLT                     ✅
         ↓
-DDD / Hexagonal                 ⏳
+Idempotency                     ✅
+        ↓
+Kafka / Event-Driven            ✅ 
+        ↓
+DDD / Hexagonal                 🚧 CURRENT
         ↓
 Security                        ⏳
         ↓
