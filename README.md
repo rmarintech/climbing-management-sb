@@ -2,7 +2,7 @@
 
 A backend application built with **Java 21 and Spring Boot** to manage climbing courses.
 
-The project is designed as a practical **Senior Backend Java** learning and portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, dynamic queries, aggregation, containerization, CI/CD, Kubernetes orchestration, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, and modern deployment practices.
+The project is designed as a practical **Senior Backend Java** portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, dynamic queries, aggregation, containerization, CI/CD, Kubernetes orchestration, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, and modern deployment practices.
 
 The application is developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -163,9 +163,19 @@ Inbound / outbound ports        ✅
         ↓
 Application service             ✅
         ↓
-Outbound adapters               🚧 CURRENT
+Mongo persistence adapter       ✅
         ↓
-DDD / Hexagonal                 🚧 CURRENT
+Course REST adapter             ✅
+        ↓
+Spring composition root         ✅
+        ↓
+POST inbound adapter            ✅
+        ↓
+Create use case E2E             ✅
+        ↓
+Read side / rehydration         🚧 CURRENT
+        ↓
+DDD / Hexagonal                 🚧
         ↓
 Security                        ⏳
         ↓
@@ -479,16 +489,43 @@ application
 
 Pure unit tests now validate both the domain model and the application service without requiring Spring, MongoDB, Kafka, Docker or HTTP.
 
-The next step is the first real outbound adapter:
+The **Create Enrollment** use case is now wired end-to-end through the Hexagonal architecture:
 
 ```text
-SaveEnrollmentPort
-        ↑
-MongoEnrollmentAdapter
-        ↓
-existing Mongo repository
-        ↓
+POST /enrollments
+      ↓
+EnrollmentController
+      ↓
+CreateEnrollmentUseCase
+      ↓
+CreateEnrollmentService
+      ├── CourseExistsPort
+      │       ↑
+      │   CourseRestAdapter
+      │       ↓
+      │   Course Service
+      │
+      └── SaveEnrollmentPort
+              ↑
+        MongoEnrollmentAdapter
+              ↓
+        EnrollmentRepository
+              ↓
+            MongoDB
+```
+
+The REST adapter now maps the created domain object to `EnrollmentResponse`, including the current `EnrollmentStatus`.
+
+The next step is the **read side**:
+
+```text
 MongoDB
+   ↓
+MongoDB → Domain rehydration
+   ↓
+Read-side outbound port
+   ↓
+GET /enrollments migration
 ```
 
 Detailed notes: [DDD.md](docs/DDD.md)
@@ -727,7 +764,7 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 
 Backend Java Developer
 
-Technologies explored in this project include:
+Technologies, architecture patterns and practices explored in this project include:
 
 
 `Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Hexagonal Architecture` · `Ports and Adapters`

@@ -226,38 +226,42 @@ After a milestone:
 ## DDD / Hexagonal Architecture
 
 - [ ] DDD
-    - [x] DDD fundamentals
-    - [x] Domain model separated from persistence model
-    - [x] Entity identity
-    - [x] Value Objects
-    - [x] Aggregate / Aggregate Root fundamentals
-    - [x] Domain invariants and behavior
-    - [x] Framework-free domain model
-    - [x] Pure domain unit tests
-    - [x] Domain logic vs application orchestration
+  - [x] DDD fundamentals
+  - [x] Domain model separated from persistence model
+  - [x] Entity identity
+  - [x] Value Objects
+  - [x] Aggregate / Aggregate Root fundamentals
+  - [x] Domain invariants and behavior
+  - [x] Framework-free domain model
+  - [x] Pure domain unit tests
+  - [x] Domain logic vs application orchestration
 - [ ] Bounded Contexts
-    - [x] Identify Course and Enrollment as separate business contexts
-    - [ ] Formalize context boundaries and responsibilities
+  - [x] Identify Course and Enrollment as separate business contexts
+  - [ ] Formalize context boundaries and responsibilities
 - [ ] Hexagonal Architecture
-    - [x] Application layer introduced
-    - [x] Inbound port / use-case concept
-    - [x] Outbound port concept
-    - [x] Dependency inversion fundamentals
-    - [x] Framework-free application service
-    - [x] Application service unit tests with fake ports
-    - [ ] Outbound persistence adapter
-    - [ ] Domain ↔ MongoDB persistence mapping
-    - [ ] Outbound Course REST adapter
-    - [ ] Spring wiring / dependency configuration
-    - [ ] Refactor REST controller into inbound adapter
-    - [ ] End-to-end use-case validation through adapters
+  - [x] Application layer introduced
+  - [x] Inbound port / use-case concept
+  - [x] Outbound port concept
+  - [x] Dependency inversion fundamentals
+  - [x] Framework-free application service
+  - [x] Application service unit tests with fake ports
+  - [x] Outbound persistence adapter
+  - [x] Domain → MongoDB persistence mapping
+  - [x] Outbound Course REST adapter
+  - [x] Spring wiring / dependency configuration
+  - [x] Refactor POST REST flow into inbound adapter
+  - [x] End-to-end Create Enrollment validation through adapters
+  - [ ] Read-side outbound port
+  - [ ] MongoDB → Domain rehydration
+  - [ ] Migrate `GET /enrollments`
 - [ ] Ports and Adapters
-    - [x] `CreateEnrollmentUseCase`
-    - [x] `SaveEnrollmentPort`
-    - [x] `CourseExistsPort`
-    - [ ] MongoDB adapter
-    - [ ] Course REST adapter
-    - [ ] REST inbound adapter migration
+  - [x] `CreateEnrollmentUseCase`
+  - [x] `SaveEnrollmentPort`
+  - [x] `CourseExistsPort`
+  - [x] MongoDB adapter
+  - [x] Course REST adapter
+  - [x] REST inbound adapter migration for POST
+  - [ ] Read-side ports and adapters
 - [ ] Clean Architecture
 - [ ] API-first design
 
@@ -399,11 +403,19 @@ Inbound / outbound ports        ✅
         ↓
 Application service             ✅
         ↓
-Outbound adapters               🚧 CURRENT
+Mongo persistence adapter       ✅
         ↓
-Mongo mapping / REST adapter    ⏳
+Course REST adapter             ✅
         ↓
-DDD / Hexagonal                 🚧 CURRENT
+Spring composition root         ✅
+        ↓
+POST inbound adapter            ✅
+        ↓
+Create use case E2E             ✅
+        ↓
+Read side / rehydration         🚧 CURRENT
+        ↓
+DDD / Hexagonal                 🚧
         ↓
 Security                        ⏳
         ↓

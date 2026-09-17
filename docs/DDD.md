@@ -129,10 +129,11 @@ versus:
 
 ```text
 Mongo persistence
-EnrollmentMongoDocument
+EnrollmentDocument
 ├── String id
 ├── Long courseId
-└── String studentName
+├── String studentName
+└── String status
 ```
 
 They can look similar without being the same class.
@@ -658,11 +659,11 @@ This is application orchestration, not domain behavior.
 
 # Framework-Free Application Service
 
-At this learning stage, `CreateEnrollmentService` deliberately has no `@Service`.
+`CreateEnrollmentService` deliberately has no `@Service`.
 
-This makes the application core easy to understand and test before Spring wiring is introduced.
+This keeps the application core independent from Spring and allows it to be instantiated directly in unit tests.
 
-Spring will later connect the ports and adapters at the edge.
+Spring wiring is now provided outside the application core through a composition-root configuration class using `@Configuration` and `@Bean`.
 
 ---
 
@@ -808,9 +809,11 @@ The current architecture keeps the Spring Data repository on the infrastructure 
 
 ---
 
-# REST Controller as Future Inbound Adapter
+# REST Controller as Inbound Adapter
 
-Eventually the Enrollment controller should become a pure inbound adapter:
+The `POST /enrollments` flow has now been migrated to the new inbound port.
+
+The controller performs only boundary responsibilities:
 
 ```text
 HTTP request
@@ -819,34 +822,66 @@ map to CreateEnrollmentCommand
       ↓
 CreateEnrollmentUseCase
       ↓
-map result to HTTP response
+map Domain Enrollment
+      ↓
+EnrollmentResponse
+      ↓
+HTTP response
 ```
 
-The controller should not own the business workflow.
+The controller no longer owns Course validation or persistence workflow for POST.
+
+The old `GET /enrollments` path is still temporarily using the previous service and will be migrated separately.
 
 ---
 
-# Course REST Client as Future Outbound Adapter
+# EnrollmentResponse as REST DTO
 
-The existing resilient Course integration already has:
+The project now uses a dedicated HTTP response model:
 
 ```text
-RestClient
-timeouts
-retries
-circuit breaker
-error mapping
+EnrollmentResponse
+├── id
+├── courseId
+├── studentName
+└── status
 ```
 
-Hexagonal refactoring does not throw that away.
-
-It will be placed behind:
+This makes the API boundary explicit:
 
 ```text
+HTTP representation
+        ≠
+Domain model
+        ≠
+Persistence model
+```
+
+The domain can evolve according to business rules without being forced to match the JSON contract or MongoDB document shape exactly.
+
+---
+
+# Course REST Adapter
+
+The resilient Course integration is now behind the outbound port:
+
+```text
+CreateEnrollmentService
+      ↓
 CourseExistsPort
+      ↑
+CourseRestAdapter
+      ↓
+CircuitBreaker
+      ↓
+CourseClient
+      ↓
+RestClient
+      ↓
+Course Service
 ```
 
-so the application core does not depend on HTTP details.
+`CourseRestAdapter` converts the domain `CourseId` into the primitive `Long` required by the existing client while keeping HTTP, retries, and circuit-breaker concerns outside the application core.
 
 ---
 
@@ -931,80 +966,180 @@ The existing Spring/Mongo classes remain alongside this while adapters are intro
 
 ---
 
-# Target Adapter Shape
+# Current Adapter Shape
 
-Target direction:
+The Enrollment Service now has the first real Hexagonal adapters:
 
 ```text
 Enrollment Service
 ├── domain
+│   └── model
+│
 ├── application
-└── adapter
-    ├── in
-    │   ├── rest
-    │   └── kafka
-    └── out
-        ├── persistence
-        │   └── mongodb
-        └── course
-            └── rest
+│   ├── port
+│   │   ├── in
+│   │   └── out
+│   └── service
+│
+├── adapter
+│   ├── in
+│   │   └── rest
+│   │       └── EnrollmentResponse
+│   │
+│   └── out
+│       ├── persistence
+│       │   └── mongodb
+│       │       └── MongoEnrollmentAdapter
+│       │
+│       └── course
+│           └── rest
+│               └── CourseRestAdapter
+│
+└── configuration
+    └── EnrollmentApplicationConfiguration
 ```
 
-This is the target architecture, not all of it exists yet.
+The `POST /enrollments` path now uses this architecture end-to-end. The read side is still pending migration.
 
 ---
 
-# Next Step — Mongo Persistence Adapter
+# Mongo Persistence Adapter
 
-The next implementation is:
+`MongoEnrollmentAdapter` now implements `SaveEnrollmentPort`:
 
 ```text
+CreateEnrollmentService
+      ↓
 SaveEnrollmentPort
-        ↑
+      ↑
 MongoEnrollmentAdapter
-        ↓
-existing Mongo repository
-        ↓
+      ↓
+EnrollmentRepository
+      ↓
 MongoDB
 ```
 
-The adapter will map between:
+Its responsibility is to translate the domain aggregate into the MongoDB persistence model.
+
+Current mapping:
 
 ```text
-Domain Enrollment
+Domain                          MongoDB
+
+EnrollmentId("abc")     →       "abc"
+CourseId(10)            →       10
+StudentName("Rubén")    →       "Rubén"
+EnrollmentStatus.PENDING→       "PENDING"
 ```
 
-and:
-
-```text
-EnrollmentMongoDocument
-```
-
-This is where the earlier domain/persistence separation becomes concrete.
+The domain does not contain MongoDB annotations or Spring Data types.
 
 ---
 
-# Mapping Belongs at the Boundary
+# Adapter Unit Testing
 
-Example direction:
+The real outbound adapters are unit-tested independently.
+
+For `MongoEnrollmentAdapter`, Mockito is used to mock the Spring Data repository, and `ArgumentCaptor<EnrollmentDocument>` captures the object passed to `save(...)`.
+
+That lets the test verify the Domain → Mongo mapping without requiring a running MongoDB instance.
+
+`CourseRestAdapter` is also tested with mocked `CourseClient`, `CircuitBreakerFactory`, and `CircuitBreaker`. The mock circuit breaker is configured to execute the supplied `Supplier`, allowing the test to verify that the underlying client receives the primitive Course id.
+
+---
+
+# Spring Composition Root
+
+The application service remains framework-free.
+
+Spring creates it through:
 
 ```text
-Domain
-EnrollmentId("abc")
-CourseId(10)
-StudentName("Rubén")
-
-      ↓ mapping
-
-Mongo document
-id = "abc"
-courseId = 10
-studentName = "Rubén"
+EnrollmentApplicationConfiguration
+        ↓
+@Configuration
+        ↓
+@Bean CreateEnrollmentUseCase
+        ↓
+new CreateEnrollmentService(
+    CourseExistsPort,
+    SaveEnrollmentPort
+)
 ```
 
-The adapter absorbs the technical representation difference.
+This distinguishes two related concepts:
 
-The domain does not need to become a Mongo document.
+```text
+Dependency Inversion
+    ↓
+application depends on ports
+
+Dependency Injection
+    ↓
+Spring provides adapter implementations
+```
+
+---
+
+# End-to-End Create Enrollment Validation
+
+The complete POST flow has been executed successfully:
+
+```text
+POST /enrollments
+      ↓
+EnrollmentController
+      ↓
+CreateEnrollmentCommand
+      ↓
+CreateEnrollmentUseCase
+      ↓
+CreateEnrollmentService
+      │
+      ├── CourseExistsPort
+      │       ↑
+      │   CourseRestAdapter
+      │       ↓
+      │   Course Service
+      │
+      └── SaveEnrollmentPort
+              ↑
+        MongoEnrollmentAdapter
+              ↓
+        EnrollmentRepository
+              ↓
+            MongoDB
+```
+
+The application generates the `EnrollmentId` as a UUID before persistence.
+
+MongoDB stores the corresponding document with `courseId`, `studentName`, and `status = "PENDING"`. The REST response is mapped through `EnrollmentResponse` so the status is exposed without returning the domain entity directly.
+
+---
+
+# Current Next Step — Read Side and Rehydration
+
+The write side is now migrated.
+
+The next architectural problem is the read side:
+
+```text
+MongoDB
+   ↓
+EnrollmentDocument
+   ↓
+Mongo adapter
+   ↓
+Domain Enrollment
+   ↓
+GET /enrollments
+```
+
+This introduces an important DDD concept: **rehydration**.
+
+A new Enrollment always starts as `PENDING`, but an Enrollment loaded from persistence may already be `CONFIRMED` or `CANCELLED`. Reading from MongoDB therefore cannot simply use the normal creation path if that path always establishes a new `PENDING` aggregate.
+
+The domain will need a safe reconstruction path that restores persisted state while preserving invariants.
 
 ---
 
@@ -1022,7 +1157,7 @@ A concise Hexagonal explanation:
 
 # Current Learning Position
 
-The domain and application core are now established.
+The **Create Enrollment** use case is now fully wired through the first Hexagonal path.
 
 Covered so far:
 
@@ -1040,35 +1175,29 @@ Outbound ports
 Dependency inversion
 Framework-free application service
 Application service unit tests with fake ports
+Mongo persistence adapter
+Domain → MongoDB mapping
+Course REST adapter
+Adapter unit tests with Mockito
+Spring composition root
+POST REST inbound mapping
+EnrollmentResponse REST DTO
+End-to-end Create Enrollment validation
 ```
 
 Current next step:
 
 ```text
-SaveEnrollmentPort
-        ↑
-MongoEnrollmentAdapter
-        ↓
-Mongo persistence
+MongoDB
+   ↓
+MongoDB → Domain rehydration
+   ↓
+read-side outbound port
+   ↓
+GET /enrollments migration
 ```
 
-Then:
-
-```text
-CourseExistsPort
-        ↑
-Course REST Adapter
-```
-
-Then:
-
-```text
-Spring wiring
-      ↓
-REST inbound adapter migration
-      ↓
-full hexagonal request flow
-```
+This is the point where the project will distinguish creating a new aggregate from rehydrating an existing aggregate with previously persisted state.
 
 For milestone status, use [`ROADMAP.md`](ROADMAP.md).
 
