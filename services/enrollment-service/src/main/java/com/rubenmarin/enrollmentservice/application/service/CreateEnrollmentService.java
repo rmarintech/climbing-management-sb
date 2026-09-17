@@ -11,8 +11,7 @@ import com.rubenmarin.enrollmentservice.domain.model.StudentName;
 
 import java.util.UUID;
 
-public class CreateEnrollmentService
-        implements CreateEnrollmentUseCase {
+public class CreateEnrollmentService implements CreateEnrollmentUseCase {
 
     private final CourseExistsPort courseExistsPort;
     private final SaveEnrollmentPort saveEnrollmentPort;

@@ -8,7 +8,7 @@ import com.rubenmarin.enrollmentservice.domain.model.EnrollmentStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
-
+//a pure unit test for CreateEnrollmentService using fake/mock ports.
 class CreateEnrollmentServiceTest {
 
     @Test
@@ -22,29 +22,25 @@ class CreateEnrollmentServiceTest {
         // return exactly the Enrollment that the application asks us to save.
         SaveEnrollmentPort saveEnrollmentPort = enrollment -> enrollment;
 
-        CreateEnrollmentService service =
+        CreateEnrollmentService createEnrollmentService =
                 new CreateEnrollmentService(
                         courseExistsPort,
                         saveEnrollmentPort
                 );
 
-        CreateEnrollmentCommand command =
+        CreateEnrollmentCommand createEnrollmentCommand =
                 new CreateEnrollmentCommand(
                         10L,
                         "Rubén"
                 );
 
-        Enrollment result = service.createEnrollment(command);
+        Enrollment createEnrollmentResult = createEnrollmentService.createEnrollment(createEnrollmentCommand);
 
-        assertNotNull(result);
-
-        assertNotNull(result.getId());
-
-        assertEquals(10L, result.getCourseId().value());
-
-        assertEquals("Rubén", result.getStudentName().value());
-
-        assertEquals(EnrollmentStatus.PENDING, result.getStatus());
+        assertNotNull(createEnrollmentResult);
+        assertNotNull(createEnrollmentResult.getId());
+        assertEquals(10L, createEnrollmentResult.getCourseId().value());
+        assertEquals("Rubén", createEnrollmentResult.getStudentName().value());
+        assertEquals(EnrollmentStatus.PENDING, createEnrollmentResult.getStatus());
     }
 
     @Test
@@ -52,29 +48,38 @@ class CreateEnrollmentServiceTest {
 
         CourseExistsPort courseExistsPort = courseId -> false;
 
+        //If CreateEnrollmentService accidentally calls persistence
+        // after Course validation fails, the test fails immediately.
         SaveEnrollmentPort saveEnrollmentPort =
                 enrollment -> {
                     fail("Enrollment should not be saved");
                     return enrollment;
                 };
 
-        CreateEnrollmentService service =
+        CreateEnrollmentService createEnrollmentService =
                 new CreateEnrollmentService(
                         courseExistsPort,
                         saveEnrollmentPort
                 );
 
-        CreateEnrollmentCommand command =
+        CreateEnrollmentCommand createEnrollmentCommand =
                 new CreateEnrollmentCommand(
                         999L,
                         "Rubén"
                 );
 
+        // “Create a little function that takes no parameters and,
+        // when executed, runs createEnrollment(...).”
+        //  method call= do it now
+        //  () -> methodCall() = give me a function that can do it later
+
+
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> service.createEnrollment(command)
+                        () -> createEnrollmentService.createEnrollment(createEnrollmentCommand)
                 );
+
 
         assertEquals("Course does not exist", exception.getMessage());
     }

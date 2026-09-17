@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+
+//tests the entity business behavior
+
 class EnrollmentTest {
 
     @Test
@@ -15,10 +18,7 @@ class EnrollmentTest {
                 new StudentName("Rubén")
         );
 
-        assertEquals(
-                EnrollmentStatus.PENDING,
-                enrollment.getStatus()
-        );
+        assertEquals(EnrollmentStatus.PENDING, enrollment.getStatus());
     }
 
     @Test
@@ -32,10 +32,7 @@ class EnrollmentTest {
 
         enrollment.confirm();
 
-        assertEquals(
-                EnrollmentStatus.CONFIRMED,
-                enrollment.getStatus()
-        );
+        assertEquals(EnrollmentStatus.CONFIRMED, enrollment.getStatus());
     }
 
     @Test
@@ -55,10 +52,7 @@ class EnrollmentTest {
                         enrollment::confirm
                 );
 
-        assertEquals(
-                "Only a pending enrollment can be confirmed",
-                exception.getMessage()
-        );
+        assertEquals("Only a pending enrollment can be confirmed", exception.getMessage());
     }
 
     @Test
@@ -72,10 +66,7 @@ class EnrollmentTest {
 
         enrollment.cancel();
 
-        assertThrows(
-                IllegalStateException.class,
-                enrollment::confirm
-        );
+        assertThrows(IllegalStateException.class, enrollment::confirm);
     }
 
     @Test
@@ -89,19 +80,13 @@ class EnrollmentTest {
 
         enrollment.cancel();
 
-        assertThrows(
-                IllegalStateException.class,
-                enrollment::cancel
-        );
+        assertThrows(IllegalStateException.class, enrollment::cancel);
     }
 
     @Test
     void studentNameCannotBeBlank() {
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new StudentName(" ")
-        );
+        assertThrows(IllegalArgumentException.class, () -> new StudentName(" "));
     }
 
     @Test
@@ -109,9 +94,6 @@ class EnrollmentTest {
 
         StudentName studentName = new StudentName("  Rubén  ");
 
-        assertEquals(
-                "Rubén",
-                studentName.value()
-        );
+        assertEquals("Rubén", studentName.value());
     }
 }
