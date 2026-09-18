@@ -1,6 +1,7 @@
 package com.rubenmarin.enrollmentservice.configuration;
 
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentUseCase;
+import com.rubenmarin.enrollmentservice.application.port.in.FindEnrollmentsUseCase;
 import com.rubenmarin.enrollmentservice.application.port.out.CourseExistsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.FindEnrollmentsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.SaveEnrollmentPort;
@@ -37,6 +38,22 @@ public class EnrollmentApplicationConfiguration {
 //   SaveEnrollmentPort
 //          ↑
 //  MongoEnrollmentAdapter
+
+//    It is the one place where we intentionally allow Spring to know both worlds and connect them:
+//               Spring / infrastructure
+//                  ↓
+//               @Configuration
+//                  ↓
+//               EnrollmentApplicationConfiguration
+//                  ↓
+//               constructs
+//                   ↓
+//           pure application services
+//    That is why Spring is perfectly fine here.
+//    The mistake would be putting Spring inside:
+//    - domain/
+//    - application/
+
     @Bean
     public CreateEnrollmentUseCase createEnrollmentUseCase(
             CourseExistsPort courseExistsPort,
@@ -47,7 +64,7 @@ public class EnrollmentApplicationConfiguration {
     }
 
     @Bean
-    public FindEnrollmentsService findEnrollmentsService(FindEnrollmentsPort findEnrollmentsPort) {
+    public FindEnrollmentsUseCase findEnrollmentsUseCase(FindEnrollmentsPort findEnrollmentsPort) {
         return new FindEnrollmentsService(findEnrollmentsPort);
     }
 }

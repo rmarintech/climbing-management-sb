@@ -237,7 +237,7 @@ After a milestone:
   - [x] Domain logic vs application orchestration
 - [ ] Bounded Contexts
   - [x] Identify Course and Enrollment as separate business contexts
-  - [ ] Formalize context boundaries and responsibilities
+  - [x] Formalize context boundaries and responsibilities
 - [ ] Hexagonal Architecture
   - [x] Application layer introduced
   - [x] Inbound port / use-case concept
@@ -268,7 +268,7 @@ After a milestone:
   - [x] `FindEnrollmentsPort`
   - [x] Read-side MongoDB adapter
   - [x] REST inbound adapter migration for GET
-- [ ] Clean Architecture
+- [x] Clean Architecture
 - [ ] API-first design
 
 ---
