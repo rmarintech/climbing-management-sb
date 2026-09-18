@@ -35,9 +35,7 @@ public class CreateEnrollmentService implements CreateEnrollmentUseCase {
 
         Enrollment enrollment =
                 new Enrollment(
-                        new EnrollmentId(
-                                UUID.randomUUID().toString()
-                        ),
+                        new EnrollmentId(UUID.randomUUID().toString()),
                         courseId,
                         new StudentName(command.studentName())
                 );

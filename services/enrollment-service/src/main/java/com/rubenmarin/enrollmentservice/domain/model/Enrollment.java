@@ -51,6 +51,37 @@ public class Enrollment {
         this.status = EnrollmentStatus.PENDING;
     }
 
+    private Enrollment(
+            EnrollmentId id,
+            CourseId courseId,
+            StudentName studentName,
+            EnrollmentStatus status
+    ) {
+        this.id = id;
+        this.courseId = courseId;
+        this.studentName = studentName;
+        this.status = status;
+    }
+
+    // Conceptually  new Enrollment(...)
+    // means:  Create a new Enrollment according to business rules.
+    // while Enrollment.rehydrate(...)
+    // means: Reconstruct an existing Enrollment from stored state.
+    // That's an important DDD distinction.
+    public static Enrollment rehydrate(
+            EnrollmentId id,
+            CourseId courseId,
+            StudentName studentName,
+            EnrollmentStatus status
+    ) {
+        return new Enrollment(
+                id,
+                courseId,
+                studentName,
+                status
+        );
+    }
+
     public EnrollmentId getId() {
         return id;
     }

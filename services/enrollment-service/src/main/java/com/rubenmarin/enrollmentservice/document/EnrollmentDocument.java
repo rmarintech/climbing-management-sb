@@ -15,13 +15,6 @@ public class EnrollmentDocument {
     public EnrollmentDocument() {
     }
 
-    // Keep the old constructor temporarily because the old EnrollmentService
-    // still uses it while we refactor incrementally.
-    public EnrollmentDocument(Long courseId, String studentName) {
-        this.courseId = courseId;
-        this.studentName = studentName;
-    }
-
     // Constructor used by the new Hexagonal persistence adapter.
     public EnrollmentDocument(
             String id,

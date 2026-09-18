@@ -96,4 +96,18 @@ class EnrollmentTest {
 
         assertEquals("Rubén", studentName.value());
     }
+
+    @Test
+    void shouldRehydrateExistingEnrollmentWithPersistedStatus() {
+
+        Enrollment enrollment =
+                Enrollment.rehydrate(
+                        new EnrollmentId("enrollment-1"),
+                        new CourseId(10L),
+                        new StudentName("Rubén"),
+                        EnrollmentStatus.CONFIRMED
+                );
+
+        assertEquals(EnrollmentStatus.CONFIRMED, enrollment.getStatus());
+    }
 }

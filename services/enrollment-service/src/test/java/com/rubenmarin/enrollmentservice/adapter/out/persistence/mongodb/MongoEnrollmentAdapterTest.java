@@ -10,6 +10,8 @@ import com.rubenmarin.enrollmentservice.repository.EnrollmentRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -66,7 +68,43 @@ class MongoEnrollmentAdapterTest {
         assertEquals(EnrollmentStatus.PENDING.name(), savedDocument.getStatus());
         assertSame(enrollment, enrollmentResult);
 
-       // assertEquals() means: same value?
-       // assertSame() means: literally the exact same Java object instance?
+        // assertEquals() means: same value?
+        // assertSame() means: literally the exact same Java object instance?
+    }
+
+    //    This specifically proves:
+    //
+    //    Mongo "CONFIRMED"
+    //            ↓
+    //    EnrollmentStatus.CONFIRMED
+    //
+    //    without accidentally resetting the aggregate to PENDING.
+    @Test
+    void shouldMapMongoDocumentsToDomainEnrollments() {
+
+        EnrollmentRepository enrollmentRepository = mock(EnrollmentRepository.class);
+
+        MongoEnrollmentAdapter mongoEnrollmentAdapter = new MongoEnrollmentAdapter(enrollmentRepository);
+
+        EnrollmentDocument document =
+                new EnrollmentDocument(
+                        "enrollment-1",
+                        10L,
+                        "Rubén",
+                        "CONFIRMED"
+                );
+
+        when(enrollmentRepository.findAll()).thenReturn(List.of(document));
+
+        List<Enrollment> result = mongoEnrollmentAdapter.findAll();
+
+        assertEquals(1, result.size());
+
+        Enrollment enrollment = result.getFirst();
+
+        assertEquals("enrollment-1", enrollment.getId().value());
+        assertEquals(10L, enrollment.getCourseId().value());
+        assertEquals("Rubén", enrollment.getStudentName().value());
+        assertEquals(EnrollmentStatus.CONFIRMED, enrollment.getStatus());
     }
 }
