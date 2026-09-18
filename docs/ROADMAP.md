@@ -225,7 +225,7 @@ After a milestone:
 
 ## DDD / Hexagonal Architecture
 
-- [ ] DDD
+- [x] DDD
   - [x] DDD fundamentals
   - [x] Domain model separated from persistence model
   - [x] Entity identity
@@ -235,10 +235,16 @@ After a milestone:
   - [x] Framework-free domain model
   - [x] Pure domain unit tests
   - [x] Domain logic vs application orchestration
-- [ ] Bounded Contexts
+- [x] Bounded Contexts
   - [x] Identify Course and Enrollment as separate business contexts
   - [x] Formalize context boundaries and responsibilities
-- [ ] Hexagonal Architecture
+  - [x] Upstream / downstream relationship
+  - [x] Context Map fundamentals
+  - [x] Anti-Corruption Layer concept
+  - [x] Published Language concept
+  - [x] Conformist vs protected local model
+  - [x] Distinguish Bounded Context, Aggregate, Microservice and database ownership
+- [x] Hexagonal Architecture
   - [x] Application layer introduced
   - [x] Inbound port / use-case concept
   - [x] Outbound port concept
@@ -257,7 +263,7 @@ After a milestone:
   - [x] Spring wiring for read use case
   - [x] Migrate `GET /enrollments`
   - [x] End-to-end read-side validation with persisted status
-- [ ] Ports and Adapters
+- [x] Ports and Adapters
   - [x] `CreateEnrollmentUseCase`
   - [x] `SaveEnrollmentPort`
   - [x] `CourseExistsPort`
@@ -269,6 +275,12 @@ After a milestone:
   - [x] Read-side MongoDB adapter
   - [x] REST inbound adapter migration for GET
 - [x] Clean Architecture
+  - [x] Dependency Rule
+  - [x] Domain layer verified framework-free
+  - [x] Application layer verified framework-free
+  - [x] Adapters verified to depend inward on application/domain
+  - [x] Composition root / Spring wiring boundary
+  - [x] Dependency inversion vs dependency injection
 - [ ] API-first design
 
 ---
@@ -427,7 +439,13 @@ GET inbound adapter             ✅
         ↓
 Read-side E2E validation        ✅
         ↓
-DDD / Hexagonal                 🚧 CURRENT
+Bounded Contexts / Context Map  ✅
+        ↓
+DDD / Hexagonal                 ✅
+        ↓
+Clean Architecture              ✅
+        ↓
+API-first design                🚧 CURRENT
         ↓
 Security                        ⏳
         ↓

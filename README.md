@@ -181,7 +181,13 @@ GET inbound adapter             ✅
         ↓
 Read-side E2E validation        ✅
         ↓
-DDD / Hexagonal                 🚧 CURRENT
+Bounded Contexts / Context Map  ✅
+        ↓
+DDD / Hexagonal                 ✅
+        ↓
+Clean Architecture              ✅
+        ↓
+API-first design                🚧 CURRENT
         ↓
 Security                        ⏳
         ↓
@@ -445,9 +451,9 @@ Current Kafka learning milestones include:
 ---
 
 
-# 🏛️ DDD / Hexagonal Architecture — Current Phase
+# 🏛️ DDD / Hexagonal / Clean Architecture
 
-The current course phase is refactoring the **Enrollment Service** toward a domain-centered and hexagonal design while preserving the existing working application.
+The Enrollment Service has now been refactored through the core **DDD, Hexagonal Architecture, Ports and Adapters, Bounded Context, and Clean Architecture** milestones while preserving the working application.
 
 Current direction:
 
@@ -554,6 +560,31 @@ EnrollmentResponse
 ```
 
 A real end-to-end test confirmed that an Enrollment persisted with `status = "CONFIRMED"` is returned as `CONFIRMED`, proving that rehydration restores persisted state instead of applying the new-aggregate default of `PENDING`.
+
+The two business contexts are now formally separated:
+
+```text
+Course Context
+    upstream
+       │
+       │ REST / Kafka published contracts
+       ▼
+Enrollment Context
+    downstream
+```
+
+Enrollment does not import Course persistence or domain implementation classes. `CourseExistsPort` and `CourseRestAdapter` protect the Enrollment model from the upstream implementation.
+
+The Clean Architecture dependency rule was also verified directly in the source tree:
+
+```text
+domain      → infrastructure    NO
+application → infrastructure    NO
+adapters    → application       YES
+adapters    → domain            YES
+```
+
+Spring wiring is intentionally kept in `EnrollmentApplicationConfiguration`, which acts as the composition root.
 
 Detailed notes: [DDD.md](docs/DDD.md)
 
@@ -777,6 +808,9 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Entities, Value Objects, Aggregates and domain invariants
 * Hexagonal architecture
 * Inbound / outbound ports and adapters
+* Bounded Contexts and Context Mapping
+* Clean Architecture and dependency direction
+* API-first design
 * Security
 * Testing
 * Observability
@@ -794,4 +828,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Hexagonal Architecture` · `Ports and Adapters`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture`

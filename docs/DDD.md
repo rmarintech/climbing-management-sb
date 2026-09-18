@@ -102,6 +102,159 @@ Bounded Context ≠ automatically one microservice
 
 A Bounded Context is a domain/model boundary. A microservice is a runtime/deployment boundary. They often align, but they are not the same concept.
 
+The current project formalizes the responsibilities as:
+
+```text
+Course Context
+├── owns Course
+├── owns Course persistence
+└── exposes Course-related contracts
+
+Enrollment Context
+├── owns Enrollment
+├── owns Enrollment lifecycle/status
+├── owns Enrollment persistence
+└── refers to Course only through CourseId / external contracts
+```
+
+The Enrollment Service was checked for direct imports of the Course application's internal model (`CourseEntity`, `CourseRecord`, `CourseMongoDocument`, and Course application packages). No such dependencies were found.
+
+This means the Enrollment Context does not share the upstream Course implementation model.
+
+---
+
+# Bounded Context vs Aggregate vs Microservice vs Database Boundary
+
+These concepts are related but solve different problems:
+
+```text
+Bounded Context
+    semantic/model boundary
+
+Aggregate
+    consistency boundary inside a domain model
+
+Microservice
+    runtime/deployment boundary
+
+Database boundary
+    data ownership boundary
+```
+
+In this project they align cleanly:
+
+```text
+Enrollment Context
+      ↓
+contains
+      ↓
+Enrollment Aggregate
+      ↓
+implemented by
+      ↓
+Enrollment Service
+      ↓
+owns
+      ↓
+Enrollment MongoDB data
+```
+
+This alignment is useful, but it is not a universal DDD rule. One Bounded Context does not automatically equal one microservice.
+
+---
+
+# Context Map — Course and Enrollment
+
+The relationship is:
+
+```text
+UPSTREAM
+
+Course Context
+      │
+      │ published REST / event contracts
+      ▼
+CourseRestAdapter / Kafka boundary
+      │
+      │ translation / isolation
+      ▼
+Enrollment Context
+
+DOWNSTREAM
+```
+
+Course is **upstream** because it owns Course information that Enrollment needs.
+
+Enrollment is **downstream** because it consumes that information.
+
+The downstream context protects its own language through:
+
+```text
+CourseExistsPort
+CourseId
+CourseRestAdapter
+```
+
+rather than importing Course persistence or domain classes.
+
+---
+
+# Context Mapping Patterns
+
+## Anti-Corruption Layer
+
+The Enrollment side uses an ACL-like translation boundary:
+
+```text
+Course Context
+      ↓
+external HTTP representation
+      ↓
+CourseRestAdapter
+      ↓
+CourseExistsPort
+      ↓
+Enrollment language
+```
+
+The purpose is to stop external model changes from leaking into the Enrollment domain.
+
+The important property is not simply "there is an adapter". The important property is that the boundary translates and protects the local model.
+
+## Published Language
+
+A Published Language is an explicit shared communication contract.
+
+This project already demonstrates two examples:
+
+```text
+REST contract
+Course Service → Enrollment Service
+```
+
+and:
+
+```text
+Kafka event contract
+CourseCreatedEvent
+```
+
+The Kafka event contract is especially explicit because it has fields such as `eventType`, `eventVersion`, `sourceService`, `occurredAt`, and Course data.
+
+The producer and consumer own separate Java representations while agreeing on the external message contract.
+
+## Conformist
+
+A Conformist downstream context accepts the upstream model largely as-is.
+
+That is not what Enrollment currently does. It does not import Course internal classes; it keeps its own `CourseId` and local port abstractions.
+
+## Customer / Supplier
+
+Customer / Supplier describes the organizational relationship in which an upstream supplier intentionally serves downstream requirements.
+
+Because this learning project owns both contexts, that relationship could be designed explicitly, but the strongest patterns demonstrated in code today are the published contracts and the protected Enrollment model.
+
 ---
 
 # Domain Model vs Persistence Model
@@ -978,6 +1131,89 @@ Clean Architecture
 
 They work well together.
 
+The Clean Architecture rule used here is:
+
+```text
+Source-code dependencies point inward.
+```
+
+Applied to the Enrollment Service:
+
+```text
+OUTSIDE
+
+Spring / HTTP / MongoDB
+        ↓
+Adapters
+        ↓
+Application / Use Cases
+        ↓
+Domain
+
+INSIDE
+```
+
+The runtime execution path can move outward through an outbound port:
+
+```text
+CreateEnrollmentService
+        ↓
+SaveEnrollmentPort
+        ↓
+MongoEnrollmentAdapter
+        ↓
+MongoDB
+```
+
+but the source-code dependency is inverted:
+
+```text
+CreateEnrollmentService
+        ↓
+SaveEnrollmentPort
+        ↑
+MongoEnrollmentAdapter implements the port
+```
+
+The application owns the abstraction; infrastructure supplies the implementation.
+
+This connects three ideas learned in this phase:
+
+```text
+Dependency Inversion Principle
+        ↓
+core owns the abstraction
+
+Hexagonal Architecture
+        ↓
+ports and adapters
+
+Clean Architecture
+        ↓
+dependencies point inward
+```
+
+## Dependency Rule Verification
+
+The actual source tree was checked directly.
+
+The domain package had no references to Spring, MongoDB, REST DTOs, Kafka, or persistence documents.
+
+The application package had no references to Spring, `MongoRepository`, `RestClient`, `KafkaTemplate`, or `EnrollmentDocument`.
+
+The adapter package did contain imports of application ports and domain types, as expected.
+
+So the verified direction is:
+
+```text
+domain      → infrastructure    NO
+application → infrastructure    NO
+adapters    → application       YES
+adapters    → domain            YES
+```
+
+That is the intended Clean Architecture dependency rule in the real codebase.
+
 ---
 
 # Current Package Shape
@@ -1140,9 +1376,11 @@ A second Mongo adapter test covers the reverse direction by mocking `EnrollmentR
 
 # Spring Composition Root
 
-The application service remains framework-free.
+The domain and application layers remain framework-free.
 
-Spring creates both application services through the composition root:
+Spring is intentionally allowed in the composition root because this is the assembly point where technical implementations are connected to framework-free application services.
+
+Current wiring:
 
 ```text
 EnrollmentApplicationConfiguration
@@ -1163,17 +1401,37 @@ EnrollmentApplicationConfiguration
             )
 ```
 
+Both bean methods expose the inbound use-case interfaces rather than the concrete application-service types.
+
+The resulting separation is:
+
+```text
+domain
+    pure Java
+
+application
+    pure Java
+
+adapters
+    Spring / MongoDB / HTTP integrations
+
+configuration
+    Spring wiring / composition root
+```
+
 This distinguishes two related concepts:
 
 ```text
 Dependency Inversion
     ↓
-application depends on ports
+application depends on ports owned by the core
 
 Dependency Injection
     ↓
-Spring provides adapter implementations
+Spring supplies the concrete adapter implementations
 ```
+
+The composition root is therefore the deliberate place where both worlds are connected without pushing Spring into the business core.
 
 ---
 
@@ -1299,9 +1557,9 @@ A concise Hexagonal explanation:
 
 # Current Learning Position
 
-The Enrollment write and read paths are now both running through the Hexagonal architecture.
+The DDD, Bounded Context, Hexagonal Architecture, Ports and Adapters, and Clean Architecture objectives for this phase are now covered.
 
-Covered so far:
+Completed concepts and implementation milestones include:
 
 ```text
 DDD fundamentals
@@ -1311,6 +1569,14 @@ Aggregate Root
 Domain invariants
 Behavior-rich domain model
 Framework-free domain tests
+Bounded Contexts
+Course / Enrollment context boundaries
+Upstream / downstream relationship
+Context Map fundamentals
+Anti-Corruption Layer concept
+Published Language
+Conformist comparison
+Bounded Context vs Aggregate vs Microservice vs database ownership
 Application layer
 Inbound use-case ports
 Outbound ports
@@ -1329,6 +1595,10 @@ REST controller moved to adapter/in/rest
 POST end-to-end Hexagonal flow
 GET end-to-end Hexagonal flow
 Persisted status rehydration verified with real MongoDB
+Clean Architecture Dependency Rule
+Domain/application dependency checks
+Adapters verified to point inward
+Composition-root boundary
 ```
 
 Current architecture:
@@ -1352,7 +1622,7 @@ CourseRestAdapter  └──── MongoEnrollmentAdapter
 Course Service                MongoDB
 ```
 
-The core Enrollment create/read use cases are now migrated. The broader Architecture phase remains open for the remaining Bounded Context, Clean Architecture, and API-first topics tracked in `ROADMAP.md`.
+The next architecture topic is **API-first design**.
 
 For milestone status, use [`ROADMAP.md`](ROADMAP.md).
 
