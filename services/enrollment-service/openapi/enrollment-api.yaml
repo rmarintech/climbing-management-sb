@@ -1,0 +1,138 @@
+openapi: 3.0.3
+
+info:
+  title: Enrollment Service API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8081
+
+paths:
+  /enrollments:
+
+    get:
+      summary: Get all enrollments
+      operationId: getEnrollments
+
+      responses:
+        '200':
+          description: List of enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrollmentResponse'
+
+
+    post:
+      summary: Create an enrollment
+      # operationId: Unique logical name for the API operation
+      operationId: createEnrollment
+
+      # requestBody: Contract accepted from the client
+      requestBody:
+        # required: Mandatory JSON properties
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentRequest'
+
+      # responses: Contract returned by the server
+      responses:
+        '201':
+          description: Enrollment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResponse'
+
+        '404':
+          description: Course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '400':
+          description: Invalid enrollment request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '503':
+          description: Course service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    # EnrollmentRequest:
+    # courseId >= 1
+    # studentName length >= 1
+    EnrollmentRequest:
+      type: object
+      required:
+        - courseId
+        - studentName
+      properties:
+        courseId:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1
+        studentName:
+          type: string
+          minLength: 1
+          example: Rubén
+
+    # EnrollmentResponse:
+    EnrollmentResponse:
+      type: object
+      required:
+        - id
+        - courseId
+        - studentName
+        - status
+      properties:
+        id:
+          type: string
+          example: 3c599a03-cf83-4177-829f-4b683640ecba
+        courseId:
+          type: integer
+          format: int64
+          example: 1
+        studentName:
+          type: string
+          example: Rubén
+        status:
+          type: string
+          enum:
+            - PENDING
+            - CONFIRMED
+            - CANCELLED
+          example: PENDING
+
+    # ErrorResponse:
+    ErrorResponse:
+      type: object
+      required:
+        - timestamp
+        - message
+        - status
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: 2026-09-18T14:19:07.647282800Z
+        message:
+          type: string
+          example:
+            Course not found: 999999
+        status:
+          type: integer
+          example: 404

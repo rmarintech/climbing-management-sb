@@ -8,6 +8,7 @@ import com.rubenmarin.enrollmentservice.domain.model.CourseId;
 import com.rubenmarin.enrollmentservice.domain.model.Enrollment;
 import com.rubenmarin.enrollmentservice.domain.model.EnrollmentId;
 import com.rubenmarin.enrollmentservice.domain.model.StudentName;
+import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
 
 import java.util.UUID;
 
@@ -30,7 +31,8 @@ public class CreateEnrollmentService implements CreateEnrollmentUseCase {
         CourseId courseId = new CourseId(command.courseId());
 
         if (!courseExistsPort.existsById(courseId)) {
-            throw new IllegalArgumentException("Course does not exist");
+            //throw new IllegalArgumentException("Course does not exist");
+            throw new CourseNotFoundException(courseId.value());
         }
 
         Enrollment enrollment =

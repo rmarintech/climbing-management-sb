@@ -5,6 +5,7 @@ import com.rubenmarin.enrollmentservice.application.port.out.CourseExistsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.SaveEnrollmentPort;
 import com.rubenmarin.enrollmentservice.domain.model.Enrollment;
 import com.rubenmarin.enrollmentservice.domain.model.EnrollmentStatus;
+import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -74,13 +75,13 @@ class CreateEnrollmentServiceTest {
         //  () -> methodCall() = give me a function that can do it later
 
 
-        IllegalArgumentException exception =
+        CourseNotFoundException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        CourseNotFoundException.class,
                         () -> createEnrollmentService.createEnrollment(createEnrollmentCommand)
                 );
 
 
-        assertEquals("Course does not exist", exception.getMessage());
+        assertEquals("Course not found: " + 999L, exception.getMessage());
     }
 }
