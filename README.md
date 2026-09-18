@@ -173,9 +173,15 @@ POST inbound adapter            ✅
         ↓
 Create use case E2E             ✅
         ↓
-Read side / rehydration         🚧 CURRENT
+Read-side port / service         ✅
         ↓
-DDD / Hexagonal                 🚧
+Mongo → Domain rehydration      ✅
+        ↓
+GET inbound adapter             ✅
+        ↓
+Read-side E2E validation        ✅
+        ↓
+DDD / Hexagonal                 🚧 CURRENT
         ↓
 Security                        ⏳
         ↓
@@ -476,18 +482,25 @@ The application layer currently contains:
 
 ```text
 application
-└── port
-    ├── in
-    │   ├── CreateEnrollmentCommand
-    │   └── CreateEnrollmentUseCase
-    └── out
-        ├── SaveEnrollmentPort
-        └── CourseExistsPort
+├── port
+│   ├── in
+│   │   ├── CreateEnrollmentCommand
+│   │   ├── CreateEnrollmentUseCase
+│   │   └── FindEnrollmentsUseCase
+│   └── out
+│       ├── SaveEnrollmentPort
+│       ├── FindEnrollmentsPort
+│       └── CourseExistsPort
+└── service
+    ├── CreateEnrollmentService
+    └── FindEnrollmentsService
 ```
 
-`CreateEnrollmentService` implements the inbound use case and orchestrates Course validation, domain construction and persistence through outbound ports.
+`CreateEnrollmentService` implements the write-side inbound use case and orchestrates Course validation, domain construction and persistence through outbound ports.
 
-Pure unit tests now validate both the domain model and the application service without requiring Spring, MongoDB, Kafka, Docker or HTTP.
+`FindEnrollmentsService` implements the read-side use case and obtains domain aggregates through `FindEnrollmentsPort`.
+
+Pure unit tests validate the domain model, both application services, and both outbound adapter directions without requiring a real MongoDB instance for unit-level mapping tests.
 
 The **Create Enrollment** use case is now wired end-to-end through the Hexagonal architecture:
 
@@ -516,17 +529,31 @@ CreateEnrollmentService
 
 The REST adapter now maps the created domain object to `EnrollmentResponse`, including the current `EnrollmentStatus`.
 
-The next step is the **read side**:
+The read side is now also migrated end-to-end:
 
 ```text
+GET /enrollments
+      ↓
+EnrollmentController
+      ↓
+FindEnrollmentsUseCase
+      ↓
+FindEnrollmentsService
+      ↓
+FindEnrollmentsPort
+      ↑
+MongoEnrollmentAdapter
+      ↓
+EnrollmentRepository
+      ↓
 MongoDB
-   ↓
-MongoDB → Domain rehydration
-   ↓
-Read-side outbound port
-   ↓
-GET /enrollments migration
+      ↓
+Enrollment.rehydrate(...)
+      ↓
+EnrollmentResponse
 ```
+
+A real end-to-end test confirmed that an Enrollment persisted with `status = "CONFIRMED"` is returned as `CONFIRMED`, proving that rehydration restores persisted state instead of applying the new-aggregate default of `PENDING`.
 
 Detailed notes: [DDD.md](docs/DDD.md)
 

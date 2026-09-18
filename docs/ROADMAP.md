@@ -251,9 +251,12 @@ After a milestone:
   - [x] Spring wiring / dependency configuration
   - [x] Refactor POST REST flow into inbound adapter
   - [x] End-to-end Create Enrollment validation through adapters
-  - [ ] Read-side outbound port
-  - [ ] MongoDB → Domain rehydration
-  - [ ] Migrate `GET /enrollments`
+  - [x] Read-side outbound port
+  - [x] MongoDB → Domain rehydration
+  - [x] Read-side application service
+  - [x] Spring wiring for read use case
+  - [x] Migrate `GET /enrollments`
+  - [x] End-to-end read-side validation with persisted status
 - [ ] Ports and Adapters
   - [x] `CreateEnrollmentUseCase`
   - [x] `SaveEnrollmentPort`
@@ -261,7 +264,10 @@ After a milestone:
   - [x] MongoDB adapter
   - [x] Course REST adapter
   - [x] REST inbound adapter migration for POST
-  - [ ] Read-side ports and adapters
+  - [x] `FindEnrollmentsUseCase`
+  - [x] `FindEnrollmentsPort`
+  - [x] Read-side MongoDB adapter
+  - [x] REST inbound adapter migration for GET
 - [ ] Clean Architecture
 - [ ] API-first design
 
@@ -413,9 +419,15 @@ POST inbound adapter            ✅
         ↓
 Create use case E2E             ✅
         ↓
-Read side / rehydration         🚧 CURRENT
+Read-side port / service         ✅
         ↓
-DDD / Hexagonal                 🚧
+Mongo → Domain rehydration      ✅
+        ↓
+GET inbound adapter             ✅
+        ↓
+Read-side E2E validation        ✅
+        ↓
+DDD / Hexagonal                 🚧 CURRENT
         ↓
 Security                        ⏳
         ↓
