@@ -2,12 +2,16 @@ package com.rubenmarin.enrollmentservice.exception;
 
 import org.springframework.http.HttpStatus;
 
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.Instant;
-import java.util.Map;
+import com.rubenmarin.enrollmentservice.api.generated.model.ErrorResponse;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -18,7 +22,7 @@ public class GlobalExceptionHandler {
             CourseNotFoundException exception) {
 
         return new ErrorResponse(
-                Instant.now(),
+                OffsetDateTime.now(ZoneOffset.UTC),
                 exception.getMessage(),
                 HttpStatus.NOT_FOUND.value()
         );
@@ -30,7 +34,7 @@ public class GlobalExceptionHandler {
             CourseServiceUnavailableException exception) {
 
         return new ErrorResponse(
-                Instant.now(),
+                OffsetDateTime.now(ZoneOffset.UTC),
                 exception.getMessage(),
                 HttpStatus.SERVICE_UNAVAILABLE.value()
         );
@@ -40,8 +44,28 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleIllegalArgumentException(IllegalArgumentException exception) {
         return new ErrorResponse(
-                Instant.now(),
+                OffsetDateTime.now(ZoneOffset.UTC),
                 exception.getMessage(),
+                HttpStatus.BAD_REQUEST.value()
+        );
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleMethodArgumentNotValidException(MethodArgumentNotValidException exception) {
+
+        String message = exception
+                .getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .findFirst()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage()
+                )
+                .orElse("Invalid Request");
+
+        return new ErrorResponse(
+                OffsetDateTime.now(ZoneOffset.UTC),
+                message,
                 HttpStatus.BAD_REQUEST.value()
         );
     }

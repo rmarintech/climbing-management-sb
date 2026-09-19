@@ -5,6 +5,11 @@ import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentUseC
 import com.rubenmarin.enrollmentservice.application.port.in.FindEnrollmentsUseCase;
 
 import com.rubenmarin.enrollmentservice.domain.model.Enrollment;
+
+import com.rubenmarin.enrollmentservice.api.generated.model.EnrollmentRequest;
+import com.rubenmarin.enrollmentservice.api.generated.model.EnrollmentResponse;
+import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -39,12 +44,12 @@ public class EnrollmentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public EnrollmentResponse create(@RequestBody EnrollmentRequest enrollmentRequest) {
+    public EnrollmentResponse create(@Valid @RequestBody EnrollmentRequest enrollmentRequest) {
 
         CreateEnrollmentCommand command =
                 new CreateEnrollmentCommand(
-                        enrollmentRequest.courseId(),
-                        enrollmentRequest.studentName()
+                        enrollmentRequest.getCourseId(),
+                        enrollmentRequest.getStudentName()
                 );
 
         Enrollment created = createEnrollmentUseCase.createEnrollment(command);
@@ -60,7 +65,9 @@ public class EnrollmentController {
                 enrollment.getId().value(),
                 enrollment.getCourseId().value(),
                 enrollment.getStudentName().value(),
-                enrollment.getStatus().name()
+                EnrollmentResponse.StatusEnum.fromValue(
+                        enrollment.getStatus().name()
+                )
         );
     }
 
