@@ -1,6 +1,6 @@
-# Domain-Driven Design / Hexagonal Architecture
+# Domain-Driven Design / Hexagonal / Clean / API-First Architecture
 
-This document contains the theory, architecture notes, implementation decisions, examples, and learning conclusions for the **DDD / Hexagonal Architecture** phase of the Climbing Management project.
+This document contains the theory, architecture notes, implementation decisions, examples, and learning conclusions for the **DDD / Hexagonal / Clean Architecture / API-first** phase of the Climbing Management project.
 
 Progress tracking belongs in [`ROADMAP.md`](ROADMAP.md).
 
@@ -965,14 +965,18 @@ The current architecture keeps the Spring Data repository on the infrastructure 
 
 # REST Controller as Inbound Adapter
 
-Both Enrollment REST endpoints now enter the application through inbound use cases.
+Both Enrollment REST endpoints enter the application through inbound use cases, but the HTTP contract is now generated from OpenAPI.
 
 Write side:
 
 ```text
 POST /enrollments
       ↓
-EnrollmentRequest
+generated EnrollmentsApi
+      ↓
+generated EnrollmentRequest
+      ↓
+EnrollmentController
       ↓
 CreateEnrollmentCommand
       ↓
@@ -980,7 +984,7 @@ CreateEnrollmentUseCase
       ↓
 Domain Enrollment
       ↓
-EnrollmentResponse
+generated EnrollmentResponse
 ```
 
 Read side:
@@ -988,22 +992,48 @@ Read side:
 ```text
 GET /enrollments
       ↓
+generated EnrollmentsApi
+      ↓
+EnrollmentController
+      ↓
 FindEnrollmentsUseCase
       ↓
 List<Domain Enrollment>
       ↓
-EnrollmentResponse
+generated EnrollmentResponse[]
 ```
 
-`EnrollmentController` now lives under `adapter/in/rest`, alongside `EnrollmentRequest` and `EnrollmentResponse`.
+`EnrollmentController` remains under `adapter/in/rest`, but the handwritten `EnrollmentRequest` and `EnrollmentResponse` classes were removed after the OpenAPI-generated models replaced them.
 
-The controller no longer owns Course validation, persistence, or MongoDB mapping. It is responsible only for the HTTP boundary and DTO/use-case mapping.
+The controller now implements:
+
+```java
+EnrollmentsApi
+```
+
+The generated interface owns the HTTP mappings. The controller owns the implementation behavior and mapping between generated HTTP models and application/domain concepts.
+
+This preserves the boundary:
+
+```text
+OpenAPI-generated HTTP contract
+        ↓
+REST adapter
+        ↓
+application
+        ↓
+domain
+```
+
+Generated OpenAPI types do not leak into the application or domain layers.
 
 ---
 
-# EnrollmentResponse as REST DTO
+# OpenAPI-Generated REST Models
 
-The project now uses dedicated HTTP request/response models:
+The external API models now come from `openapi/enrollment-api.yaml`.
+
+Generated models:
 
 ```text
 EnrollmentRequest
@@ -1015,19 +1045,41 @@ EnrollmentResponse
 ├── courseId
 ├── studentName
 └── status
+
+ErrorResponse
+├── timestamp
+├── message
+└── status
 ```
 
-This makes the API boundary explicit:
+The API boundary remains explicitly different from the domain and persistence models:
 
 ```text
-HTTP representation
+OpenAPI / HTTP representation
         ≠
 Domain model
         ≠
 Persistence model
 ```
 
-The domain can evolve according to business rules without being forced to match the JSON contract or MongoDB document shape exactly.
+The generated request model also carries Bean Validation constraints derived from the contract.
+
+For example:
+
+```yaml
+courseId:
+  type: integer
+  format: int64
+  minimum: 1
+```
+
+generates a Java validation constraint equivalent to:
+
+```java
+@Min(1L)
+```
+
+With `@Valid` at the REST boundary, invalid requests can be rejected before they enter the application use case.
 
 ---
 
@@ -1216,74 +1268,417 @@ That is the intended Clean Architecture dependency rule in the real codebase.
 
 ---
 
-# Current Package Shape
+# API-First Design
 
-Current learning structure:
+API-first changes the source of truth for the HTTP boundary.
+
+Earlier:
 
 ```text
-com.rubenmarin.enrollmentservice
-├── domain
-│   └── model
-│       ├── Enrollment
-│       ├── EnrollmentId
-│       ├── CourseId
-│       ├── StudentName
-│       └── EnrollmentStatus
-│
-├── application
-│   ├── port
-│   │   ├── in
-│   │   │   ├── CreateEnrollmentCommand
-│   │   │   ├── CreateEnrollmentUseCase
-│   │   │   └── FindEnrollmentsUseCase
-│   │   └── out
-│   │       ├── SaveEnrollmentPort
-│   │       ├── FindEnrollmentsPort
-│   │       └── CourseExistsPort
-│   └── service
-│       ├── CreateEnrollmentService
-│       └── FindEnrollmentsService
-│
-└── adapter
-    ├── in
-    │   └── rest
-    │       ├── EnrollmentController
-    │       ├── EnrollmentRequest
-    │       └── EnrollmentResponse
-    └── out
-        ├── persistence
-        │   └── mongodb
-        │       └── MongoEnrollmentAdapter
-        └── course
-            └── rest
-                └── CourseRestAdapter
+Controller code
+      ↓
+API behavior emerges from implementation
 ```
 
-The existing Spring/Mongo classes remain alongside this while adapters are introduced incrementally.
+Current approach:
+
+```text
+OpenAPI contract
+      ↓
+generated Java contract
+      ↓
+controller implementation
+```
+
+The Enrollment API contract is stored at:
+
+```text
+services/enrollment-service/openapi/enrollment-api.yaml
+```
+
+The contract currently defines:
+
+```text
+GET /enrollments
+└── 200 → EnrollmentResponse[]
+
+POST /enrollments
+├── request → EnrollmentRequest
+├── 201 → EnrollmentResponse
+├── 400 → ErrorResponse
+├── 404 → ErrorResponse
+└── 503 → ErrorResponse
+```
+
+## Reusable OpenAPI Schemas
+
+The contract uses reusable `components/schemas` instead of repeating inline structures:
+
+```text
+EnrollmentRequest
+EnrollmentResponse
+ErrorResponse
+```
+
+This centralizes the public API representation.
+
+The `EnrollmentResponse.status` contract explicitly allows:
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+without coupling the OpenAPI document to the Java domain enum class.
+
+## Contract-Driven Validation
+
+Validation constraints are part of the API contract.
+
+Examples:
+
+```text
+courseId   minimum = 1
+studentName minLength = 1
+```
+
+OpenAPI Generator produces Bean Validation annotations from those constraints.
+
+The tested runtime flow is:
+
+```text
+OpenAPI minimum: 1
+        ↓
+generated @Min(1L)
+        ↓
+@Valid
+        ↓
+Spring validation
+        ↓
+MethodArgumentNotValidException
+        ↓
+GlobalExceptionHandler
+        ↓
+generated ErrorResponse
+        ↓
+400 Bad Request
+```
+
+This was verified with a negative `courseId`.
+
+## Contract Alignment Exposed Real Regressions
+
+Writing the API contract exposed implementation behavior that no longer matched the intended external API after the Hexagonal refactor.
+
+Missing Course initially produced:
+
+```text
+500 Internal Server Error
+```
+
+The application was corrected to use `CourseNotFoundException`, restoring:
+
+```text
+404 Not Found
+```
+
+An invalid Course id initially also produced:
+
+```text
+500 Internal Server Error
+```
+
+The REST boundary was corrected so invalid input produces:
+
+```text
+400 Bad Request
+```
+
+A real Course Service outage was tested and produced:
+
+```text
+503 Service Unavailable
+```
+
+All three error cases now use the same public `ErrorResponse` shape.
+
+## Standardized Error Contract
+
+The OpenAPI schema defines:
+
+```text
+ErrorResponse
+├── timestamp
+├── message
+└── status
+```
+
+The handwritten Java `ErrorResponse` was removed.
+
+`GlobalExceptionHandler` now returns the generated OpenAPI `ErrorResponse`, whose timestamp is represented as `OffsetDateTime`.
+
+This removes duplicated definitions of the external error contract.
+
+## Maven Contract Validation
+
+The `openapi-generator-maven-plugin` validates the OpenAPI specification during the Maven lifecycle.
+
+The validation was explicitly proven by temporarily changing:
+
+```yaml
+openapi: 3.0.3
+```
+
+to an invalid value.
+
+The build failed with a `SpecValidationException`.
+
+After restoring the valid specification:
+
+```text
+mvn clean verify
+        ↓
+BUILD SUCCESS
+```
+
+This proves the contract is an enforced build artifact rather than passive documentation.
+
+## Generated Models
+
+The build currently generates:
+
+```text
+target/generated-sources/openapi/src/main/java/
+└── com/rubenmarin/enrollmentservice/api/generated/
+    └── model/
+        ├── EnrollmentRequest.java
+        ├── EnrollmentResponse.java
+        └── ErrorResponse.java
+```
+
+Generated source is kept under `target/generated-sources`; it is not copied into `src/main/java`.
+
+Conceptually:
+
+```text
+OpenAPI YAML
+      ↓
+source of truth
+
+generated Java
+      ↓
+derived build artifact
+```
+
+## Generated API Interface
+
+The generator also creates:
+
+```text
+api/generated/api/EnrollmentsApi.java
+```
+
+The important generator options are:
+
+```xml
+<interfaceOnly>true</interfaceOnly>
+<skipDefaultInterface>true</skipDefaultInterface>
+```
+
+`interfaceOnly=true` means the generator creates the API contract interface but does not create a competing controller implementation.
+
+`skipDefaultInterface=true` means the generated interface does not provide fallback/default endpoint implementations. The real controller must implement the contract.
+
+The generated interface contains the Spring MVC mappings for:
+
+```text
+POST /enrollments
+GET  /enrollments
+```
+
+`EnrollmentController` now implements `EnrollmentsApi`.
+
+So ownership is:
+
+```text
+OpenAPI YAML
+      ↓
+defines HTTP contract
+      ↓
+generated EnrollmentsApi
+      ↓
+EnrollmentController
+      ↓
+implements behavior
+```
+
+## Documentation Generation Options
+
+The generator is configured with:
+
+```xml
+<documentationProvider>none</documentationProvider>
+<annotationLibrary>none</annotationLibrary>
+```
+
+This avoids generating runtime Springdoc / Swagger documentation integration and avoids Swagger-specific Java annotations such as `@Schema`.
+
+The OpenAPI YAML remains the contract source of truth without requiring additional documentation annotation dependencies in the generated Java code.
+
+## API-First and Clean Architecture Together
+
+API-first does not mean generated types should spread through the whole application.
+
+The current dependency boundary remains:
+
+```text
+OpenAPI-generated models/interface
+        ↓
+adapter/in/rest
+        ↓
+application ports / commands
+        ↓
+domain
+```
+
+Verified design rule:
+
+```text
+domain        → no generated OpenAPI classes
+application   → no generated OpenAPI classes
+REST adapter  → generated OpenAPI classes
+```
+
+This keeps the API contract explicit while preserving the Hexagonal and Clean Architecture dependency rules.
+
+## End-to-End Generated Contract Validation
+
+After `EnrollmentController` implemented the generated `EnrollmentsApi`, both operations were tested successfully:
+
+```text
+POST /enrollments → 201 Created
+GET  /enrollments → 200 OK
+```
+
+The created Enrollment appeared in the subsequent GET response.
+
+This proves the complete API-first path:
+
+```text
+enrollment-api.yaml
+        ↓
+OpenAPI Generator
+        ↓
+EnrollmentsApi + generated models
+        ↓
+EnrollmentController
+        ↓
+application use cases
+        ↓
+domain
+        ↓
+MongoDB
+```
+
+---
+
+# Current Package Shape
+
+Current source structure:
+
+```text
+services/enrollment-service/
+├── openapi/
+│   └── enrollment-api.yaml
+│
+└── src/main/java/com/rubenmarin/enrollmentservice/
+    ├── domain
+    │   └── model
+    │       ├── Enrollment
+    │       ├── EnrollmentId
+    │       ├── CourseId
+    │       ├── StudentName
+    │       └── EnrollmentStatus
+    │
+    ├── application
+    │   ├── port
+    │   │   ├── in
+    │   │   │   ├── CreateEnrollmentCommand
+    │   │   │   ├── CreateEnrollmentUseCase
+    │   │   │   └── FindEnrollmentsUseCase
+    │   │   └── out
+    │   │       ├── SaveEnrollmentPort
+    │   │       ├── FindEnrollmentsPort
+    │   │       └── CourseExistsPort
+    │   └── service
+    │       ├── CreateEnrollmentService
+    │       └── FindEnrollmentsService
+    │
+    ├── adapter
+    │   ├── in
+    │   │   └── rest
+    │   │       └── EnrollmentController
+    │   └── out
+    │       ├── persistence
+    │       │   └── mongodb
+    │       │       └── MongoEnrollmentAdapter
+    │       └── course
+    │           └── rest
+    │               └── CourseRestAdapter
+    │
+    └── configuration
+        └── EnrollmentApplicationConfiguration
+```
+
+Generated API artifacts live under the build output:
+
+```text
+target/generated-sources/openapi/src/main/java/
+└── com/rubenmarin/enrollmentservice/api/generated/
+    ├── api
+    │   └── EnrollmentsApi
+    └── model
+        ├── EnrollmentRequest
+        ├── EnrollmentResponse
+        └── ErrorResponse
+```
+
+The generated code is derived from `openapi/enrollment-api.yaml` and is not manually maintained.
 
 ---
 
 # Current Adapter Shape
 
-The Enrollment Service now has the first real Hexagonal adapters:
+The current inbound REST side now includes a generated contract boundary:
+
+```text
+OpenAPI contract
+      ↓
+generated EnrollmentsApi
+      ↓
+EnrollmentController
+      ↓
+application use cases
+```
+
+The complete Enrollment Service shape is:
 
 ```text
 Enrollment Service
-├── domain
-│   └── model
+├── openapi
+│   └── enrollment-api.yaml
 │
-├── application
-│   ├── port
-│   │   ├── in
-│   │   └── out
-│   └── service
+├── generated API contract
+│   ├── EnrollmentsApi
+│   ├── EnrollmentRequest
+│   ├── EnrollmentResponse
+│   └── ErrorResponse
 │
 ├── adapter
 │   ├── in
 │   │   └── rest
-│   │       ├── EnrollmentController
-│   │       ├── EnrollmentRequest
-│   │       └── EnrollmentResponse
+│   │       └── EnrollmentController
 │   │
 │   └── out
 │       ├── persistence
@@ -1294,11 +1689,14 @@ Enrollment Service
 │           └── rest
 │               └── CourseRestAdapter
 │
+├── application
+├── domain
+│
 └── configuration
     └── EnrollmentApplicationConfiguration
 ```
 
-Both `POST /enrollments` and `GET /enrollments` now use this architecture end-to-end.
+Both `POST /enrollments` and `GET /enrollments` have been validated end-to-end through the generated API interface.
 
 ---
 
@@ -1442,6 +1840,10 @@ The complete POST flow has been executed successfully:
 ```text
 POST /enrollments
       ↓
+generated EnrollmentsApi
+      ↓
+generated EnrollmentRequest
+      ↓
 EnrollmentController
       ↓
 CreateEnrollmentCommand
@@ -1516,6 +1918,8 @@ The read flow is now:
 ```text
 GET /enrollments
       ↓
+generated EnrollmentsApi
+      ↓
 EnrollmentController
       ↓
 FindEnrollmentsUseCase
@@ -1557,7 +1961,7 @@ A concise Hexagonal explanation:
 
 # Current Learning Position
 
-The DDD, Bounded Context, Hexagonal Architecture, Ports and Adapters, and Clean Architecture objectives for this phase are now covered.
+The DDD, Bounded Context, Hexagonal Architecture, Ports and Adapters, Clean Architecture, and API-first objectives for this architecture phase are now covered.
 
 Completed concepts and implementation milestones include:
 
@@ -1582,47 +1986,53 @@ Inbound use-case ports
 Outbound ports
 Dependency inversion
 Framework-free application services
-Application service unit tests with fake ports
 Mongo persistence adapter
 Domain → MongoDB mapping
 MongoDB → Domain mapping
 Aggregate rehydration
 Course REST adapter
-Adapter unit tests with Mockito
 Spring composition root
-EnrollmentRequest / EnrollmentResponse DTOs
-REST controller moved to adapter/in/rest
-POST end-to-end Hexagonal flow
-GET end-to-end Hexagonal flow
-Persisted status rehydration verified with real MongoDB
+POST / GET end-to-end Hexagonal flows
 Clean Architecture Dependency Rule
 Domain/application dependency checks
-Adapters verified to point inward
-Composition-root boundary
+OpenAPI 3.0 contract
+Reusable request / response / error schemas
+201 / 400 / 404 / 503 API behavior
+Contract-driven validation
+Maven OpenAPI validation
+Invalid-spec build failure test
+OpenAPI-generated request / response / error models
+Generated Bean Validation constraints
+Generated EnrollmentsApi interface
+EnrollmentController implementing generated contract
+Handwritten HTTP DTO removal
+Generated error-model adoption
+POST / GET end-to-end validation through generated API contract
 ```
 
 Current architecture:
 
 ```text
-                    REST
-                     ↓
-          EnrollmentController
-             /             \
-            ↓               ↓
-CreateEnrollmentUseCase  FindEnrollmentsUseCase
-            ↓               ↓
-CreateEnrollmentService  FindEnrollmentsService
-       /        \               |
-      ↓          ↓              ↓
-CourseExists  SaveEnrollment  FindEnrollments
-    Port          Port            Port
-      ↑            ↑              ↑
-CourseRestAdapter  └──── MongoEnrollmentAdapter
-      ↓                         ↓
-Course Service                MongoDB
+                    OpenAPI
+                       ↓
+              generated EnrollmentsApi
+                       ↓
+               EnrollmentController
+                 /             \
+                ↓               ↓
+CreateEnrollmentUseCase    FindEnrollmentsUseCase
+                ↓               ↓
+CreateEnrollmentService    FindEnrollmentsService
+       /        \                 |
+      ↓          ↓                ↓
+CourseExists  SaveEnrollment   FindEnrollments
+    Port          Port             Port
+      ↑            ↑               ↑
+CourseRestAdapter  └───── MongoEnrollmentAdapter
+      ↓                          ↓
+Course Service                 MongoDB
 ```
 
-The next architecture topic is **API-first design**.
 
 For milestone status, use [`ROADMAP.md`](ROADMAP.md).
 

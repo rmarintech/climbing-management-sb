@@ -23,6 +23,8 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 * Spring Boot Actuator
 * Spring Cloud Circuit Breaker
 * Spring Kafka
+* OpenAPI 3.0.3
+* OpenAPI Generator 7.15.0
 * Hibernate
 * Jakarta Bean Validation
 * SLF4J
@@ -151,7 +153,7 @@ Retry / DLT                     ✅
         ↓
 Idempotency                     ✅
         ↓
-DDD fundamentals                 ✅
+DDD fundamentals                ✅
         ↓
 Entities / Value Objects        ✅
         ↓
@@ -173,7 +175,7 @@ POST inbound adapter            ✅
         ↓
 Create use case E2E             ✅
         ↓
-Read-side port / service         ✅
+Read-side port / service        ✅
         ↓
 Mongo → Domain rehydration      ✅
         ↓
@@ -187,9 +189,15 @@ DDD / Hexagonal                 ✅
         ↓
 Clean Architecture              ✅
         ↓
-API-first design                🚧 CURRENT
+API-first design                ✅
         ↓
-Security                        ⏳
+OpenAPI build validation        ✅
+        ↓
+Generated API models            ✅
+        ↓
+Generated API interface         ✅
+        ↓
+Security                        🚧 CURRENT
         ↓
 Testing                         ⏳
         ↓
@@ -451,9 +459,9 @@ Current Kafka learning milestones include:
 ---
 
 
-# 🏛️ DDD / Hexagonal / Clean Architecture
+# 🏛️ DDD / Hexagonal / Clean / API-First Architecture
 
-The Enrollment Service has now been refactored through the core **DDD, Hexagonal Architecture, Ports and Adapters, Bounded Context, and Clean Architecture** milestones while preserving the working application.
+The Enrollment Service has now been refactored through the core **DDD, Hexagonal Architecture, Ports and Adapters, Bounded Context, Clean Architecture, and API-first** milestones while preserving the working application.
 
 Current direction:
 
@@ -585,6 +593,50 @@ adapters    → domain            YES
 ```
 
 Spring wiring is intentionally kept in `EnrollmentApplicationConfiguration`, which acts as the composition root.
+
+The REST boundary is now also contract-first:
+
+```text
+openapi/enrollment-api.yaml
+        ↓
+OpenAPI Generator
+        ↓
+generated EnrollmentsApi
+generated EnrollmentRequest
+generated EnrollmentResponse
+generated ErrorResponse
+        ↓
+EnrollmentController
+        ↓
+application use cases
+        ↓
+domain
+```
+
+The OpenAPI contract defines both operations and their important response behavior:
+
+```text
+GET  /enrollments
+└── 200 → EnrollmentResponse[]
+
+POST /enrollments
+├── 201 → EnrollmentResponse
+├── 400 → ErrorResponse
+├── 404 → ErrorResponse
+└── 503 → ErrorResponse
+```
+
+Maven validates the specification during the build. A deliberately broken OpenAPI version was tested and correctly failed the build. The same contract generates the HTTP request/response/error models and the `EnrollmentsApi` interface.
+
+The generated request model carries Bean Validation constraints derived from the contract, such as `@Min(1)` for `courseId`. `EnrollmentController` implements the generated interface, so the HTTP mappings are now generated from the OpenAPI source of truth rather than duplicated manually in the controller.
+
+The generated contract remains at the REST boundary:
+
+```text
+generated API classes → adapter/in/rest
+application           → no OpenAPI dependency
+domain                → no OpenAPI dependency
+```
 
 Detailed notes: [DDD.md](docs/DDD.md)
 
@@ -811,6 +863,8 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Bounded Contexts and Context Mapping
 * Clean Architecture and dependency direction
 * API-first design
+* OpenAPI contract validation and code generation
+* Generated API interfaces and boundary models
 * Security
 * Testing
 * Observability
@@ -828,4 +882,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0`

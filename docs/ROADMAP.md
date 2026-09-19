@@ -221,7 +221,7 @@ After a milestone:
 
 ---
 
-# 🚧 Current — Architecture
+# ✅ Completed — Architecture
 
 ## DDD / Hexagonal Architecture
 
@@ -281,11 +281,35 @@ After a milestone:
   - [x] Adapters verified to depend inward on application/domain
   - [x] Composition root / Spring wiring boundary
   - [x] Dependency inversion vs dependency injection
-- [ ] API-first design
+- [x] API-first design
+  - [x] OpenAPI 3.0 contract introduced
+  - [x] `POST /enrollments` contract
+  - [x] `GET /enrollments` contract
+  - [x] Reusable request / response schemas
+  - [x] Reusable `ErrorResponse` schema
+  - [x] Contracted `201`, `400`, `404`, and `503` responses
+  - [x] Request constraints defined in OpenAPI
+  - [x] Runtime behavior aligned with API contract
+  - [x] Missing Course regression fixed from `500` to `404`
+  - [x] Invalid Course id aligned from `500` to `400`
+  - [x] Course dependency outage verified as `503`
+  - [x] Maven OpenAPI contract validation
+  - [x] Deliberate invalid-spec build failure verified
+  - [x] OpenAPI Generator model generation
+  - [x] Generated `EnrollmentRequest`
+  - [x] Generated `EnrollmentResponse`
+  - [x] Generated `ErrorResponse`
+  - [x] Generated Bean Validation constraints
+  - [x] Standardized validation errors through `GlobalExceptionHandler`
+  - [x] Handwritten REST DTOs removed
+  - [x] Generated `EnrollmentsApi` interface
+  - [x] `EnrollmentController` implements generated API interface
+  - [x] Generated interface owns HTTP mappings
+  - [x] POST / GET end-to-end validation through generated contract
 
 ---
 
-# 🔜 Security
+# 🚧 Current — Security
 
 - [ ] Spring Security
 - [ ] Authentication
@@ -431,7 +455,7 @@ POST inbound adapter            ✅
         ↓
 Create use case E2E             ✅
         ↓
-Read-side port / service         ✅
+Read-side port / service        ✅
         ↓
 Mongo → Domain rehydration      ✅
         ↓
@@ -445,9 +469,15 @@ DDD / Hexagonal                 ✅
         ↓
 Clean Architecture              ✅
         ↓
-API-first design                🚧 CURRENT
+API-first design                ✅
         ↓
-Security                        ⏳
+OpenAPI build validation        ✅
+        ↓
+Generated API models            ✅
+        ↓
+Generated API interface         ✅
+        ↓
+Security                        🚧 CURRENT
         ↓
 Testing                         ⏳
         ↓
