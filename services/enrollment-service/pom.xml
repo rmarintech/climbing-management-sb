@@ -144,9 +144,13 @@
                             <skipValidateSpec>false</skipValidateSpec>
 
                             <!-- Generate API models from the OpenAPI contract -->
-                            <generateApis>false</generateApis>
+                            <generateApis>true</generateApis>
                             <generateModels>true</generateModels>
                             <generateSupportingFiles>false</generateSupportingFiles>
+
+                            <apiPackage>
+                                com.rubenmarin.enrollmentservice.api.generated.api
+                            </apiPackage>
 
                             <modelPackage>
                                 com.rubenmarin.enrollmentservice.api.generated.model
@@ -157,8 +161,15 @@
                                 <openApiNullable>false</openApiNullable>
                                 <useBeanValidation>true</useBeanValidation>
 
+                                <!-- Don't generate code that depends on a runtime documentation provider. -->
                                 <documentationProvider>none</documentationProvider>
+                                <!-- Don't add Swagger/OpenAPI documentation annotations to the generated Java code. -->
                                 <annotationLibrary>none</annotationLibrary>
+
+                                <!-- Generate only the API interface, not a controller implementation. -->
+                                <interfaceOnly>true</interfaceOnly>
+                                <!-- Do not generate default method implementations inside the API interface. -->
+                                <skipDefaultInterface>true</skipDefaultInterface>
                             </configOptions>
                         </configuration>
                     </execution>

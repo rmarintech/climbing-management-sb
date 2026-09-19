@@ -1,5 +1,6 @@
 package com.rubenmarin.enrollmentservice.adapter.in.rest;
 
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsApi;
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentCommand;
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentUseCase;
 import com.rubenmarin.enrollmentservice.application.port.in.FindEnrollmentsUseCase;
@@ -11,16 +12,14 @@ import com.rubenmarin.enrollmentservice.api.generated.model.EnrollmentResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/enrollments")
-public class EnrollmentController {
+public class EnrollmentController implements EnrollmentsApi {
 
-
-    // New Hexagonal Architecture inbound port.
     private final CreateEnrollmentUseCase createEnrollmentUseCase;
     private final FindEnrollmentsUseCase findEnrollmentsUseCase;
 
@@ -31,20 +30,8 @@ public class EnrollmentController {
         this.findEnrollmentsUseCase = findEnrollmentsUseCase;
     }
 
-
-    @GetMapping
-    public List<EnrollmentResponse> findAll() {
-        return findEnrollmentsUseCase
-                .findAll()
-                .stream()
-                .map(this::toEnrollmentResponse)
-                .toList();
-    }
-
-
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public EnrollmentResponse create(@Valid @RequestBody EnrollmentRequest enrollmentRequest) {
+    @Override
+    public ResponseEntity<EnrollmentResponse> createEnrollment(EnrollmentRequest enrollmentRequest) {
 
         CreateEnrollmentCommand command =
                 new CreateEnrollmentCommand(
@@ -54,10 +41,22 @@ public class EnrollmentController {
 
         Enrollment created = createEnrollmentUseCase.createEnrollment(command);
 
-        return toEnrollmentResponse(created);
-
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(toEnrollmentResponse(created));
     }
 
+    @Override
+    public ResponseEntity<List<EnrollmentResponse>> getEnrollments() {
+
+        List<EnrollmentResponse> response = findEnrollmentsUseCase
+                .findAll()
+                .stream()
+                .map(this::toEnrollmentResponse)
+                .toList();
+
+        return ResponseEntity.ok(response);
+    }
 
     private EnrollmentResponse toEnrollmentResponse(Enrollment enrollment) {
 
@@ -70,6 +69,5 @@ public class EnrollmentController {
                 )
         );
     }
-
 
 }
