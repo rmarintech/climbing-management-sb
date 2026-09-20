@@ -1,92 +1,110 @@
 package com.rubenmarin.enrollmentservice.configuration;
 
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 public class SecurityConfiguration {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationConverter jwtAuthenticationConverter
+    ) throws Exception {
 
         http
                 .authorizeHttpRequests(authorize -> authorize
-
-                        // Health endpoint is public.
+                        // Preserve the existing public health endpoint.
                         .requestMatchers("/actuator/health").permitAll()
 
-                        // USER & ADMIN users may read enrollments.
+                        // USER and ADMIN may read enrollments.
                         .requestMatchers(HttpMethod.GET, "/enrollments")
                         .hasAnyRole("USER", "ADMIN")
 
-                        // Only ADMIN may create enrollments
+                        // Only ADMIN may create enrollments.
                         .requestMatchers(HttpMethod.POST, "/enrollments")
                         .hasRole("ADMIN")
 
-                        // Every other HTTP request requires authentication.
-                        .anyRequest()
-                        .authenticated()
+                        .anyRequest().authenticated()
                 )
 
-                // Enable HTTP Basic authentication.
-                .httpBasic(Customizer.withDefaults())
+                // Authenticate using a validated JWT access token.
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt
+                                .jwtAuthenticationConverter(
+                                        jwtAuthenticationConverter
+                                )
+                        )
+                )
 
-                // NOT:
-                // "REST API → always disable CSRF"
-                // BUT:
-                // "Stateless API where authentication is not automatically
-                // sent by the browser → CSRF protection may not be necessary"
-                //
-                // If we were building a traditional web application with:
-                //     - login form → session cookie → browser
-                // we would normally keep CSRF enabled.
+                // This API accepts explicitly supplied Bearer headers,
+                // rather than authentication cookies.
                 .csrf(AbstractHttpConfigurer::disable)
 
-
-                // STATELESS: The server does not remember your authentication in an HTTP session between requests.
-                // Spring Security will not use an HTTP session to persist authentication.
-                // HTTP Basic authenticates each request independently.
+                // Do not persist authentication in an HTTP session.
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-        ;
-
+                        .sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS
+                        )
+                );
 
         return http.build();
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
 
-    @Bean
-    public UserDetailsService userDetailsService(
-            PasswordEncoder passwordEncoder
-    ) {
+        // Preserve Spring's default scope -> SCOPE_ authority mapping.
+        JwtGrantedAuthoritiesConverter scopeConverter =
+                new JwtGrantedAuthoritiesConverter();
 
-        UserDetails user = User.withUsername("ruben")
-                .password(passwordEncoder.encode("1234"))
-                .roles("USER")
-                .build();
+        JwtAuthenticationConverter converter =
+                new JwtAuthenticationConverter();
 
-        UserDetails admin = User.withUsername("admin")
-                .password(passwordEncoder.encode("1234"))
-                .roles("ADMIN")
-                .build();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>();
 
-        return new InMemoryUserDetailsManager(user, admin);
+            Collection<GrantedAuthority> scopeAuthorities =
+                    scopeConverter.convert(jwt);
+
+            if (scopeAuthorities != null) {
+                authorities.addAll(scopeAuthorities);
+            }
+
+            // Keycloak realm roles are nested under realm_access.roles.
+            Object realmAccessClaim = jwt.getClaims().get("realm_access");
+
+            if (realmAccessClaim instanceof Map<?, ?> realmAccess
+                    && realmAccess.get("roles") instanceof Collection<?> roles) {
+
+                for (Object role : roles) {
+                    // Map only roles understood by this API.
+                    if (role instanceof String roleName
+                            && Set.of("USER", "ADMIN").contains(roleName)) {
+                        authorities.add(
+                                new SimpleGrantedAuthority("ROLE_" + roleName)
+                        );
+                    }
+                }
+            }
+
+            return authorities;
+        });
+
+        return converter;
     }
 }
