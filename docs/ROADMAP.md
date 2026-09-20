@@ -319,8 +319,8 @@ After a milestone:
 - [x] Admin-only enrollment creation: `ruben` → `403`, admin → `201`
 - [x] CSRF fundamentals and distinction from authorization
 - [x] CSRF experiment: admin GET → `200`, POST without token → `403`
-- [ ] Verify the complete GET/POST role matrix with CSRF disabled for the local non-browser exercise
-- [ ] Explicit `SessionCreationPolicy.STATELESS` configuration and verification — current exercise
+- [x] Verify the complete GET/POST role matrix with CSRF disabled for the local non-browser exercise
+- [x] Explicit `SessionCreationPolicy.STATELESS` configuration and verification — current exercise
 - [ ] OAuth2 fundamentals
 - [ ] OpenID Connect fundamentals
 - [ ] JWT structure and validation
