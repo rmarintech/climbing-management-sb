@@ -316,19 +316,29 @@ After a milestone:
 - [x] Authentication vs authorization
 - [x] Role-based authorization (RBAC)
 - [x] `ruben` / `ROLE_USER` and `admin` / `ROLE_ADMIN`
-- [x] Admin-only enrollment creation: `ruben` → `403`, admin → `201`
+- [x] Admin-only enrollment creation with HTTP Basic: `ruben` → `403`, admin → `201`
 - [x] CSRF fundamentals and distinction from authorization
 - [x] CSRF experiment: admin GET → `200`, POST without token → `403`
-- [x] Verify the complete GET/POST role matrix with CSRF disabled for the local non-browser exercise
-- [x] Explicit `SessionCreationPolicy.STATELESS` configuration and verification — current exercise
-- [ ] OAuth2 fundamentals
-- [ ] OpenID Connect fundamentals
-- [ ] JWT structure and validation
-- [ ] Bearer-token resource server configuration
-- [ ] Token claims mapped to authorities / roles
-- [ ] Align OpenAPI security scheme and `401` / `403` responses with runtime behavior
+- [x] Complete GET/POST role matrix with CSRF disabled for the local non-browser exercise
+- [x] Explicit `SessionCreationPolicy.STATELESS` configuration and verification
+- [x] OAuth2 fundamentals
+- [x] OpenID Connect fundamentals
+- [x] JWT structure, claims and expiration
+- [x] Keycloak local authorization server / identity provider
+- [x] Keycloak `climbing` realm, users and realm roles
+- [x] Postman public OAuth2 client
+- [x] Authorization Code flow with PKCE
+- [x] Audience mapper for `enrollment-service`
+- [x] Bearer-token OAuth2 Resource Server configuration
+- [x] JWT issuer validation
+- [x] JWT audience validation
+- [x] Keycloak `realm_access.roles` mapped to Spring authorities
+- [x] Bearer-token authentication verified: no token → `401`
+- [x] JWT RBAC verified: `ruben` GET `/enrollments` → `200`
+- [x] JWT RBAC verified with `admin`
+- [ ] Align OpenAPI Bearer security scheme and `401` / `403` responses with runtime behavior
 
-The stateless configuration has been supplied as the next exercise; its execution has not yet been confirmed. OAuth2, OpenID Connect and JWT remain upcoming.
+The Keycloak OAuth2/OIDC/JWT Resource Server flow is now working end to end. The remaining security checkpoint is to bring the OpenAPI contract in line with the implemented Bearer-token security model.
 
 Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
 
@@ -492,7 +502,15 @@ Generated API models            ✅
         ↓
 Generated API interface         ✅
         ↓
-Security                        🚧 CURRENT
+HTTP Basic / RBAC / CSRF          ✅
+        ↓
+OAuth2 / OIDC / JWT              ✅
+        ↓
+Keycloak Resource Server         ✅
+        ↓
+JWT audience / role mapping      ✅
+        ↓
+OpenAPI security alignment       🚧 CURRENT
         ↓
 Testing                         ⏳
         ↓

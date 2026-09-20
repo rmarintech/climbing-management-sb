@@ -1,35 +1,52 @@
 # Spring Security — Enrollment Service
 
-Learning notes for HTTP Basic, role-based access control, CSRF and stateless authentication in the Climbing Management project.
+Learning notes for HTTP Basic, role-based access control, CSRF, stateless authentication, OAuth2, OpenID Connect, JWT, Keycloak and Spring Security Resource Server configuration in the Climbing Management project.
 
 [Back to README](../README.md) · [Progress and next steps](ROADMAP.md)
 
-Progress checkboxes belong only in ROADMAP.md. This guide records the theory and exercises covered so far; it is not a claim that every example has been implemented or verified.
+Progress checkboxes belong only in ROADMAP.md. This guide records the theory, configuration and exercises covered so far.
 
 ## 1. Security at the application boundary
 
 Spring Security protects incoming HTTP requests before they reach the REST controller. Domain objects and application use cases remain independent of HTTP authentication configuration.
 
-Authentication establishes the caller's identity. Authorization determines whether that identity may perform an operation. CSRF protection is an additional request check; having the ADMIN role does not bypass it.
+Authentication establishes the caller's identity. Authorization determines whether that identity may perform an operation. CSRF protection is a separate request-protection concern.
+
+The project has now exercised two authentication approaches:
+
+```text
+Initial learning step
+HTTP Basic
+    ↓
+username + password on every request
+
+Current implementation
+OAuth2 / OpenID Connect + Keycloak
+    ↓
+Bearer JWT on every API request
+```
 
 | Concern | Question | Enrollment example |
 | --- | --- | --- |
-| Authentication | Who is calling? | Validate Basic credentials for `ruben` or `admin` |
+| Authentication | Who is calling? | Validate a JWT issued by the `climbing` Keycloak realm |
 | Authorization | May this caller perform this operation? | Require ADMIN to create an enrollment |
-| CSRF protection | Does a protected state-changing request supply the expected token? | Reject POST without a valid CSRF token when protection is enabled |
-| Session policy | Is authentication retained between requests? | With STATELESS, do not retain it in an HTTP session |
+| Token validation | May this API trust this token? | Validate signature, issuer, expiration and audience |
+| Session policy | Is authentication retained between requests? | With `STATELESS`, every request supplies its own credentials/token |
+| CSRF protection | Can a browser be tricked into sending an authenticated request? | Evaluate according to how credentials are transported |
 
-## 2. HTTP Basic
+## 2. HTTP Basic — first security exercise
 
-The client supplies credentials in the request header:
+The first security exercise used HTTP Basic.
+
+The client supplied credentials in the request header:
 
 ```http
 Authorization: Basic <base64(username:password)>
 ```
 
-Base64 is encoding, not encryption. Use HTTPS when credentials travel over a network. Do not commit real passwords, copy live Authorization headers into documentation, or log them.
+Base64 is encoding, not encryption. HTTPS is required when credentials travel over a network.
 
-Basic authentication is enabled in the existing HttpSecurity chain with:
+Basic authentication was enabled with:
 
 ```java
 .httpBasic(Customizer.withDefaults())
@@ -39,87 +56,139 @@ Basic authentication is enabled in the existing HttpSecurity chain with:
 import org.springframework.security.config.Customizer;
 ```
 
-With stateless Basic authentication, credentials are validated on each request. There is no separate token-issuing login step in this exercise.
+With stateless HTTP Basic, credentials are validated on each request. There is no separate token-issuing login step.
+
+This stage established the core distinction between:
+
+```text
+Authentication
+    =
+Who are you?
+
+Authorization
+    =
+What are you allowed to do?
+```
+
+It also established the Enrollment API role policy before moving to JWT-based authentication.
 
 ## 3. Roles and authorities
 
-The learning users have these authorities:
+The learning policy is:
 
-| User | Authority | Enrollment policy |
-| --- | --- | --- |
-| `ruben` | `ROLE_USER` | Read enrollments |
-| `admin` | `ROLE_ADMIN` | Read and create enrollments |
+| User | Keycloak realm role | Spring authority | Enrollment policy |
+| --- | --- | --- | --- |
+| `ruben` | `USER` | `ROLE_USER` | Read enrollments |
+| `admin` | `ADMIN` | `ROLE_ADMIN` | Read and create enrollments |
 
-With the default role prefix, `hasRole("ADMIN")` checks for `ROLE_ADMIN`. Use `hasAuthority("ROLE_ADMIN")` when expressing the full authority directly. Do not pass `ROLE_ADMIN` to `hasRole`.
-
-An ADMIN role does not automatically imply USER. The read rule explicitly allows either role.
+The GET rule allows both USER and ADMIN explicitly:
 
 ```java
-.authorizeHttpRequests(auth -> auth
-        .requestMatchers(HttpMethod.GET, "/enrollments/**")
-            .hasAnyRole("USER", "ADMIN")
-        .requestMatchers(HttpMethod.POST, "/enrollments/**")
-            .hasRole("ADMIN")
-        .anyRequest()
-            .authenticated()
-)
+.requestMatchers(HttpMethod.GET, "/enrollments/**")
+    .hasAnyRole("USER", "ADMIN")
 ```
+
+The POST rule requires ADMIN:
 
 ```java
-import org.springframework.http.HttpMethod;
+.requestMatchers(HttpMethod.POST, "/enrollments/**")
+    .hasRole("ADMIN")
 ```
 
-Put specific matchers before the catch-all rule. The fallback above requires authentication for other requests; it does not make every other operation admin-only. Define permissions explicitly when adding endpoints. Preserve any existing deliberate health/probe rules when integrating these snippets.
+With Spring Security's default role prefix:
 
-## 4. Understanding status codes
+```java
+hasRole("ADMIN")
+```
 
-| Status | Meaning in this exercise |
+checks for:
+
+```text
+ROLE_ADMIN
+```
+
+Therefore, when Keycloak supplies:
+
+```text
+ADMIN
+```
+
+the JWT role converter maps it to:
+
+```text
+ROLE_ADMIN
+```
+
+An ADMIN role does not automatically imply USER. The GET rule deliberately accepts either role.
+
+## 4. Understanding 200, 201, 401 and 403
+
+| Status | Meaning in this project |
 | --- | --- |
 | `200 OK` | Authorized GET completed |
 | `201 Created` | Authorized POST created an enrollment |
-| `401 Unauthorized` | Missing or invalid credentials on a protected request |
-| `403 Forbidden` | Insufficient permission, or rejection by CSRF protection |
+| `401 Unauthorized` | Authentication is missing or the Bearer token cannot be accepted |
+| `403 Forbidden` | Authentication succeeded, but the caller lacks the required authority; CSRF can also cause 403 when enabled |
 
-A `403` alone does not identify which check failed. Inspect the request and configuration. With CSRF enabled, a missing-token POST can be rejected before the expected authentication/authorization response.
+Typical JWT-related reasons for `401` include:
 
-The user confirmed that enrollment creation returns `403` for `ruben` and `201` for `admin`.
+```text
+No Bearer token
+Expired token
+Invalid signature
+Wrong issuer
+Wrong audience
+Malformed token
+```
+
+Typical authorization example:
+
+```text
+ruben
++
+valid JWT
++
+ROLE_USER
++
+POST requires ROLE_ADMIN
+=
+403 Forbidden
+```
+
+The project has verified the security distinction in practice.
 
 ## 5. CSRF: Cross-Site Request Forgery
 
-A malicious site can cause a victim's browser to send an unwanted request to an application where the browser has credentials. The browser may attach cookies or cached HTTP Basic credentials automatically.
+A malicious site can cause a victim's browser to send an unwanted request to an application where the browser automatically attaches credentials.
 
-A CSRF token provides an additional value that the legitimate client explicitly sends and an external attacking site normally cannot obtain. Spring Security protects unsafe methods such as POST by default; GET should remain read-only.
+A CSRF token provides an additional value that the legitimate client explicitly sends and an external attacking site normally cannot obtain.
 
-Statelessness alone does not remove CSRF risk. Browser-managed Basic credentials and authentication cookies can still be automatically attached to requests. A JWT stored in an authentication cookie does not avoid that issue merely because it is a JWT.
-
-### Local experiment
-
-Temporarily replace:
-
-```java
-.csrf(csrf -> csrf.disable())
-```
-
-with:
+During the HTTP Basic learning exercise, CSRF was temporarily enabled:
 
 ```java
 .csrf(Customizer.withDefaults())
 ```
 
-Restart and use admin Basic credentials without supplying a CSRF token:
+The verified behavior was:
 
-| Request | Expected result | Observed checkpoint |
+| Request | Authentication | Result |
 | --- | --- | --- |
-| `GET /enrollments` | `200` | Confirmed |
-| `POST /enrollments` | `403` | Confirmed |
+| `GET /enrollments` | admin Basic credentials | `200` |
+| `POST /enrollments` | admin Basic credentials, no CSRF token | `403` |
 
-The rejected POST should not reach enrollment creation. ADMIN privileges do not bypass CSRF protection.
+ADMIN privileges do not bypass CSRF protection.
 
-After the experiment, restore disabled CSRF for the scoped local non-browser API-client exercise. Do not generalize this to browser-facing applications. Decide CSRF policy from how clients send credentials, separately from session policy.
+For the scoped non-browser API exercise, CSRF was then disabled again:
+
+```java
+.csrf(csrf -> csrf.disable())
+```
+
+CSRF policy and session policy are separate decisions. Statelessness alone does not automatically remove CSRF risk; the relevant question is whether the browser automatically attaches the authentication credential.
 
 ## 6. Explicit stateless authentication
 
-Add this to the existing HttpSecurity chain before `build()`:
+The Enrollment Service explicitly uses a stateless security policy:
 
 ```java
 .sessionManagement(session -> session
@@ -131,89 +200,547 @@ Add this to the existing HttpSecurity chain before `build()`:
 import org.springframework.security.config.http.SessionCreationPolicy;
 ```
 
-Spring Security then does not create or use an HTTP session to persist authentication. This is not a global prohibition on other application code creating a session. It also does not mean the application has no database, cache or business state.
+`STATELESS` means Spring Security does not use an HTTP session to retain the security context between requests.
 
-| Policy | Authentication session behavior |
-| --- | --- |
-| `IF_REQUIRED` | Create a session when needed |
-| `NEVER` | Do not create one, but an existing session can be used |
-| `STATELESS` | Do not create or use one to retain the security context |
+It does **not** mean:
 
-Successful authentication on request A does not authenticate request B. Request B must supply its own credentials.
+```text
+No database
+No MongoDB
+No application state
+No persisted business data
+```
 
-This configuration has been introduced as the current exercise. Verification is still pending; see ROADMAP.md.
+It means:
 
-### Verification sequence
+```text
+Request A authenticates itself
+Request B authenticates itself again
+```
 
-Use a non-browser API client. For these checks, restore the exercise's disabled CSRF configuration and restart the application.
+The complete Basic-auth role matrix was verified before the project moved to OAuth2/JWT.
 
-| Step | Request | Authentication | Expected |
-| --- | --- | --- | --- |
-| 1 | `GET /enrollments` | Admin Basic credentials | `200` |
-| 2 | `GET /enrollments` | None | `401` |
-| 3 | `GET /enrollments` | Ruben Basic credentials | `200` |
-| 4 | `POST /enrollments` | Ruben Basic credentials | `403` |
-| 5 | `POST /enrollments` | Admin Basic credentials | `201` |
-| 6 | `POST /enrollments` | None | `401` |
+## 7. OAuth2 and OpenID Connect fundamentals
 
-For POST success, use a valid new enrollment and an existing course with the required dependencies available. Business validation and dependency failures can otherwise produce different responses.
+The current security implementation introduces Keycloak as the authorization server / identity provider.
 
-For unauthenticated checks, select No Auth and remove manually configured or inherited Authorization headers. Browser credential caching can hide this distinction.
+The roles are:
 
-These behavioral checks may have worked before the explicit setting because HTTP Basic can already operate statelessly. The configuration makes the intended policy explicit; status codes alone are not proof of the internal session setup.
+```text
+User
+    ↓
+Keycloak
+Authorization Server / Identity Provider
+    ↓
+Postman
+OAuth2 Client
+    ↓
+Enrollment Service
+OAuth2 Resource Server
+```
 
-## 7. Security and the existing OpenAPI contract
+OAuth2 is primarily about delegated authorization and access tokens.
 
-The previously documented business responses remain relevant: GET `200`; POST `201`, `400`, `404` and `503`. Security introduces additional `401` and `403` outcomes.
+OpenID Connect adds an identity layer on top of OAuth2.
 
-Aligning the OpenAPI security scheme, operation requirements and those responses is upcoming work. Do not assume that Spring Security error bodies use the application's generated ErrorResponse: filter-level failures need their own response handling if a consistent JSON contract is required.
+In this project:
 
-## 8. Interview questions
+```text
+Keycloak authenticates the user
+    ↓
+Keycloak issues tokens
+    ↓
+Postman obtains an access token
+    ↓
+Postman sends the access token to the Enrollment API
+    ↓
+Spring Security validates it
+```
+
+The Enrollment Service does not receive the user's Keycloak password. It receives a Bearer access token.
+
+## 8. Local Keycloak setup
+
+Keycloak runs locally on port `8083`:
+
+```powershell
+docker run -d --name climbing-keycloak `
+  -p 127.0.0.1:8083:8080 `
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=kcadmin `
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=local-dev-only `
+  -v climbing-keycloak-data:/opt/keycloak/data `
+  quay.io/keycloak/keycloak:26.7.4 start-dev
+```
+
+Local console:
+
+```text
+http://localhost:8083/
+```
+
+Realm:
+
+```text
+climbing
+```
+
+OIDC discovery document:
+
+```text
+http://localhost:8083/realms/climbing/.well-known/openid-configuration
+```
+
+The realm contains the learning users and roles used by the Enrollment Service.
+
+## 9. Postman OAuth2 client and Authorization Code + PKCE
+
+A public Keycloak client was registered for Postman:
+
+```text
+Client ID: climbing-postman
+Client type: OpenID Connect
+Client authentication: Off
+Standard flow: On
+PKCE method: S256
+```
+
+Redirect URI:
+
+```text
+https://oauth.pstmn.io/v1/browser-callback
+```
+
+Postman uses:
+
+```text
+Authorization Code (With PKCE)
+```
+
+with:
+
+```text
+Auth URL:
+http://localhost:8083/realms/climbing/protocol/openid-connect/auth
+
+Access Token URL:
+http://localhost:8083/realms/climbing/protocol/openid-connect/token
+```
+
+The flow is:
+
+```text
+Postman creates PKCE verifier/challenge
+    ↓
+Browser opens Keycloak
+    ↓
+User logs in
+    ↓
+Keycloak returns authorization code
+    ↓
+Postman sends code + PKCE verifier
+    ↓
+Keycloak returns access token
+```
+
+Because `climbing-postman` is a public client, it does not require a client secret.
+
+A fresh token must be obtained after changing roles, audience mappers or relevant Keycloak client configuration.
+
+## 10. Audience: client obtaining the token vs API receiving it
+
+The OAuth client and protected API are different concepts:
+
+```text
+climbing-postman
+    =
+client obtaining the token
+
+enrollment-service
+    =
+API intended to receive the token
+```
+
+The Postman client's dedicated scope contains an Audience mapper that adds:
+
+```text
+enrollment-service
+```
+
+to the access token.
+
+The verified JWT audience is:
+
+```json
+"aud": [
+  "enrollment-service",
+  "account"
+]
+```
+
+This allows the Enrollment Service to reject tokens that were not intended for it.
+
+## 11. JWT structure and useful claims
+
+A JWT consists of three Base64URL-encoded parts:
+
+```text
+header.payload.signature
+```
+
+Important claims used in this exercise include:
+
+```text
+iss
+    issuer
+
+aud
+    intended audience
+
+exp
+    expiration
+
+preferred_username
+    authenticated user
+
+realm_access.roles
+    Keycloak realm roles
+```
+
+A verified token for `ruben` contained values equivalent to:
+
+```text
+iss = http://localhost:8083/realms/climbing
+aud = enrollment-service, account
+preferred_username = ruben
+```
+
+Realm roles are available under:
+
+```json
+"realm_access": {
+  "roles": [
+    "USER"
+  ]
+}
+```
+
+or, for an administrator, include `ADMIN`.
+
+Tokens expire. A token that previously returned `200` can later return `401` because its `exp` time has passed.
+
+## 12. Spring Boot OAuth2 Resource Server
+
+The Enrollment Service includes the OAuth2 Resource Server dependency:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+</dependency>
+```
+
+The resource server trusts the `climbing` realm issuer:
+
+```properties
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8083/realms/climbing
+```
+
+It also requires the intended API audience:
+
+```properties
+spring.security.oauth2.resourceserver.jwt.audiences=enrollment-service
+```
+
+Conceptually, Spring validates:
+
+```text
+Bearer JWT
+    ↓
+signature
+    ↓
+issuer
+    ↓
+expiration
+    ↓
+audience
+```
+
+Only after successful authentication does authorization continue.
+
+## 13. Mapping Keycloak realm roles to Spring Security authorities
+
+Keycloak stores realm roles in:
+
+```text
+realm_access.roles
+```
+
+Spring Security needs those values converted into granted authorities.
+
+The project uses a `JwtAuthenticationConverter` / granted-authorities converter so that:
+
+```text
+USER
+    ↓
+ROLE_USER
+
+ADMIN
+    ↓
+ROLE_ADMIN
+```
+
+The resource server configuration then uses that converter:
+
+```java
+.oauth2ResourceServer(oauth2 -> oauth2
+    .jwt(jwt -> jwt
+        .jwtAuthenticationConverter(jwtAuthenticationConverter)
+    )
+)
+```
+
+This bridges the Keycloak token model and the existing Spring RBAC rules.
+
+## 14. Current authorization flow
+
+The current flow is:
+
+```text
+HTTP request
+    ↓
+Authorization: Bearer <JWT>
+    ↓
+Spring Security Resource Server
+    ↓
+Validate JWT
+    ├── signature
+    ├── issuer
+    ├── expiration
+    └── audience
+    ↓
+JwtAuthenticationConverter
+    ↓
+realm_access.roles
+    ↓
+ROLE_USER / ROLE_ADMIN
+    ↓
+Authorization rules
+    ↓
+Controller
+```
+
+The domain and application layers remain independent of Keycloak and Spring Security.
+
+## 15. Verified Bearer-token behavior
+
+The JWT/RBAC flow has now been exercised successfully.
+
+Verified checkpoints include:
+
+```text
+No token
+    ↓
+GET /enrollments
+    ↓
+401 Unauthorized
+```
+
+```text
+ruben + valid token + USER role
+    ↓
+GET /enrollments
+    ↓
+200 OK
+```
+
+The ADMIN user was also tested and the protected behavior worked as intended.
+
+The important distinction is:
+
+```text
+401
+    =
+authentication failed or is absent
+
+403
+    =
+authentication succeeded but authorization denied the operation
+```
+
+## 16. Troubleshooting notes
+
+### Expired token
+
+If a request that previously worked begins returning `401`, obtain a fresh access token and inspect `exp`.
+
+### Audience missing
+
+After adding or changing the Keycloak Audience mapper, previously issued tokens do not change. Obtain a new token and verify that `aud` contains:
+
+```text
+enrollment-service
+```
+
+### Browser login appears to use the wrong user
+
+An existing Keycloak browser session can reuse the previous login. Log out or use a private/incognito window before obtaining a token for another user.
+
+### Port 8081 already in use
+
+Find the listening process:
+
+```powershell
+netstat -ano | findstr :8081
+```
+
+Inspect it:
+
+```powershell
+Get-Process -Id <PID>
+```
+
+Terminate it if it is a stale Enrollment Service process:
+
+```powershell
+Stop-Process -Id <PID> -Force
+```
+
+or:
+
+```powershell
+taskkill /PID <PID> /F
+```
+
+Then restart the service.
+
+## 17. Security and the existing OpenAPI contract
+
+The existing business responses remain relevant:
+
+```text
+GET
+└── 200
+
+POST
+├── 201
+├── 400
+├── 404
+└── 503
+```
+
+Security additionally introduces:
+
+```text
+401
+403
+```
+
+The remaining security task is to align the OpenAPI contract with the runtime security model:
+
+```text
+Bearer security scheme
+    ↓
+operation security requirements
+    ↓
+401 / 403 responses
+```
+
+Do not assume filter-level Spring Security failures automatically use the application's generated `ErrorResponse`; consistent security error bodies require deliberate handling.
+
+## 18. Interview questions
 
 **What is the difference between authentication and authorization?**
 
-Authentication identifies a caller; authorization decides which actions that caller may perform.
+Authentication identifies a caller. Authorization decides which actions that authenticated caller may perform.
+
+**What role does Keycloak have here?**
+
+Keycloak is the authorization server / identity provider. It authenticates users and issues tokens.
+
+**What role does the Enrollment Service have?**
+
+It is an OAuth2 Resource Server. It receives and validates Bearer access tokens before serving protected resources.
+
+**Why does Postman use Authorization Code with PKCE?**
+
+Postman is configured as a public client, so PKCE protects the authorization-code flow without requiring a client secret.
+
+**What is the difference between `climbing-postman` and `enrollment-service`?**
+
+`climbing-postman` is the OAuth client requesting the token. `enrollment-service` is the protected API and appears as an intended token audience.
+
+**What does `issuer-uri` protect?**
+
+It tells Spring Security which issuer is trusted. A token from a different issuer is not accepted as a valid token for this resource server.
+
+**Why validate the audience?**
+
+A valid token issued by the trusted authorization server should still be rejected when it was intended for a different API.
+
+**Why is a custom JWT authority converter needed?**
+
+Keycloak realm roles are nested in `realm_access.roles`. The converter maps them to Spring authorities such as `ROLE_USER` and `ROLE_ADMIN`.
 
 **Can an authenticated user receive 403?**
 
-Yes. The user may lack the required authority, or another protection such as CSRF may reject the request.
+Yes. The JWT can be valid while the user lacks the authority required for the requested operation.
 
-**Does ADMIN automatically include USER?**
+**What typically causes 401 with JWT authentication?**
 
-No. Allow both explicitly or configure a deliberate role hierarchy.
+Missing token, expired token, invalid signature, wrong issuer, wrong audience or another token-validation failure.
 
-**Is HTTP Basic encrypted?**
+**Does `STATELESS` mean no persistence?**
 
-No. Its header encodes credentials with Base64. TLS supplies transport encryption.
+No. It concerns security-context persistence in HTTP sessions. MongoDB and other business persistence continue normally.
 
-**Does STATELESS mean no persistence?**
+**Can a stateless application still have CSRF concerns?**
 
-No. It concerns authentication session persistence. Business data may still be persisted normally.
-
-**Can a stateless application be vulnerable to CSRF?**
-
-Yes, when browsers automatically attach authentication credentials. Evaluate credential transport, not just whether a server session exists.
+Yes, depending on how credentials are transported. The relevant question is whether the browser automatically attaches the authentication credential.
 
 **Why keep security configuration outside the domain model?**
 
-HTTP authentication is an infrastructure boundary concern. The domain retains business invariants independently of Spring Security. Business-specific ownership rules may still require application/domain-level enforcement as the system evolves.
+Authentication and HTTP authorization are infrastructure-boundary concerns. The domain model remains focused on business rules and invariants.
 
-## 9. Next topic and commits
+## 19. Current checkpoint and next topic
 
-After verifying stateless behavior, proceed to OAuth2, OpenID Connect and JWT. These are upcoming topics, not completed capabilities.
+Completed security learning checkpoints now include:
 
-Suggested code checkpoint after successful verification:
-
-```bash
-git commit -m "feat(security): configure stateless HTTP Basic and enrollment RBAC"
+```text
+HTTP Basic
+RBAC
+CSRF experiment
+STATELESS sessions
+OAuth2 fundamentals
+OpenID Connect fundamentals
+JWT structure / claims
+Keycloak
+Authorization Code + PKCE
+Audience mapping
+Spring OAuth2 Resource Server
+Issuer validation
+Audience validation
+Keycloak realm-role conversion
+Bearer-token RBAC verification
 ```
 
-Documentation checkpoint from the repository root:
+Next security task:
+
+```text
+Align OpenAPI with Bearer authentication and 401 / 403 responses
+```
+
+A suitable code checkpoint for the JWT/RBAC milestone is:
+
+```bash
+git commit -m "feat(security): secure enrollment API with Keycloak JWT RBAC"
+```
+
+Documentation checkpoint:
 
 ```bash
 git add README.md docs/ROADMAP.md docs/SECURITY.md
 git diff --cached
-git commit -m "docs(security): document HTTP Basic RBAC CSRF and stateless exercise"
+git commit -m "docs(security): document Keycloak OAuth2 JWT resource server"
 ```
 
 ## References

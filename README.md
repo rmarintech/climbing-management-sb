@@ -17,7 +17,8 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 * Java 21
 * Spring Boot 4.1
 * Spring Web
-* Spring Security (HTTP Basic and role-based authorization)
+* Spring Security (HTTP Basic, OAuth2 Resource Server, JWT and role-based authorization)
+* Keycloak (OAuth2 / OpenID Connect)
 * Spring `RestClient`
 * Spring Data JPA
 * Spring Data MongoDB
@@ -82,7 +83,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
 | Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
-| Spring Security, HTTP Basic, RBAC, CSRF and stateless authentication | [SECURITY.md](docs/SECURITY.md) |
+| Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 
 ---
 
@@ -199,7 +200,15 @@ Generated API models            ✅
         ↓
 Generated API interface         ✅
         ↓
-Security                        🚧 CURRENT
+HTTP Basic / RBAC / CSRF          ✅
+        ↓
+OAuth2 / OIDC / JWT              ✅
+        ↓
+Keycloak Resource Server         ✅
+        ↓
+JWT audience / role mapping      ✅
+        ↓
+OpenAPI security alignment       🚧 CURRENT
         ↓
 Testing                         ⏳
         ↓
@@ -210,7 +219,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-Current security checkpoint: HTTP Basic and Enrollment role-based authorization have been introduced. The admin creation request returns `201`, while `ruben` receives `403`. The CSRF experiment was also verified: enabling protection without supplying a token blocks the admin POST while allowing GET. Explicit stateless configuration and its verification are the current exercise; OAuth2, OpenID Connect and JWT follow next.
+Current security checkpoint: the Enrollment Service has progressed from the initial HTTP Basic/RBAC exercise to a working **Keycloak-backed OAuth2 Resource Server**. Postman obtains JWT access tokens through **Authorization Code + PKCE**; Spring validates the `climbing` realm issuer and the `enrollment-service` audience, maps Keycloak realm roles to Spring authorities, and enforces the existing RBAC rules. The Bearer-token flow has been verified with no token → `401`, `ruben` GET `/enrollments` → `200`, and the `admin` role behaving as intended. The next security step is to align the OpenAPI contract with the Bearer security scheme and `401` / `403` responses.
 
 ---
 
@@ -646,6 +655,130 @@ Detailed notes: [DDD.md](docs/DDD.md)
 
 ---
 
+
+# 🔐 Security
+
+The Enrollment Service is now protected as an **OAuth2 Resource Server** backed by Keycloak.
+
+The learning path intentionally progressed through two stages:
+
+```text
+HTTP Basic + RBAC
+        ↓
+CSRF experiment
+        ↓
+Explicit STATELESS policy
+        ↓
+OAuth2 / OpenID Connect
+        ↓
+Keycloak
+        ↓
+Authorization Code + PKCE
+        ↓
+JWT Bearer authentication
+        ↓
+Issuer + audience validation
+        ↓
+Keycloak roles → Spring authorities
+        ↓
+RBAC
+```
+
+Local identity provider:
+
+```text
+Keycloak
+http://localhost:8083
+realm: climbing
+```
+
+Postman is registered as the OAuth2 client:
+
+```text
+climbing-postman
+```
+
+The Enrollment API is the protected resource audience:
+
+```text
+enrollment-service
+```
+
+The verified token contains the expected issuer and audience:
+
+```text
+iss
+→ http://localhost:8083/realms/climbing
+
+aud
+→ enrollment-service
+→ account
+```
+
+Realm roles are read from:
+
+```text
+realm_access.roles
+```
+
+and converted into Spring Security authorities:
+
+```text
+USER
+    ↓
+ROLE_USER
+
+ADMIN
+    ↓
+ROLE_ADMIN
+```
+
+Current request flow:
+
+```text
+User
+    ↓
+Keycloak login
+    ↓
+Authorization Code + PKCE
+    ↓
+Postman receives access token
+    ↓
+Authorization: Bearer <JWT>
+    ↓
+Enrollment Service
+    ↓
+Spring Security Resource Server
+    ↓
+signature / issuer / expiration / audience
+    ↓
+role conversion
+    ↓
+RBAC
+    ↓
+EnrollmentController
+```
+
+Verified behavior includes:
+
+```text
+No Bearer token
+→ 401
+
+ruben + USER
+→ GET /enrollments
+→ 200
+
+admin + ADMIN
+→ protected admin behavior allowed
+```
+
+The remaining security-contract task is to update OpenAPI with the Bearer authentication scheme and explicit `401` / `403` responses.
+
+Detailed notes: [SECURITY.md](docs/SECURITY.md)
+
+---
+
 # 🐳 Independent Containerization
 
 Both applications have independent Docker build boundaries.
@@ -870,6 +1003,10 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * OpenAPI contract validation and code generation
 * Generated API interfaces and boundary models
 * Security
+* OAuth2 / OpenID Connect
+* JWT authentication and validation
+* Keycloak
+* Role-based access control
 * Testing
 * Observability
 * Scalability
@@ -886,4 +1023,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC`
