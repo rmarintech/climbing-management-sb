@@ -17,6 +17,7 @@ The project has now evolved from a single Spring Boot backend into a small **mic
 * Java 21
 * Spring Boot 4.1
 * Spring Web
+* Spring Security (HTTP Basic and role-based authorization)
 * Spring `RestClient`
 * Spring Data JPA
 * Spring Data MongoDB
@@ -81,6 +82,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Microservices | [MICROSERVICES.md](docs/MICROSERVICES.md) |
 | Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
+| Spring Security, HTTP Basic, RBAC, CSRF and stateless authentication | [SECURITY.md](docs/SECURITY.md) |
 
 ---
 
@@ -207,6 +209,8 @@ System Design                   ⏳
 ```
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
+
+Current security checkpoint: HTTP Basic and Enrollment role-based authorization have been introduced. The admin creation request returns `201`, while `ruben` receives `403`. The CSRF experiment was also verified: enabling protection without supplying a token blocks the admin POST while allowing GET. Explicit stateless configuration and its verification are the current exercise; OAuth2, OpenID Connect and JWT follow next.
 
 ---
 

@@ -311,11 +311,26 @@ After a milestone:
 
 # 🚧 Current — Security
 
-- [ ] Spring Security
-- [ ] Authentication
-- [ ] Authorization
-- [ ] JWT
-- [ ] RBAC
+- [x] Spring Security introduced in the Enrollment Service
+- [x] Authentication with HTTP Basic
+- [x] Authentication vs authorization
+- [x] Role-based authorization (RBAC)
+- [x] `ruben` / `ROLE_USER` and `admin` / `ROLE_ADMIN`
+- [x] Admin-only enrollment creation: `ruben` → `403`, admin → `201`
+- [x] CSRF fundamentals and distinction from authorization
+- [x] CSRF experiment: admin GET → `200`, POST without token → `403`
+- [ ] Verify the complete GET/POST role matrix with CSRF disabled for the local non-browser exercise
+- [ ] Explicit `SessionCreationPolicy.STATELESS` configuration and verification — current exercise
+- [ ] OAuth2 fundamentals
+- [ ] OpenID Connect fundamentals
+- [ ] JWT structure and validation
+- [ ] Bearer-token resource server configuration
+- [ ] Token claims mapped to authorities / roles
+- [ ] Align OpenAPI security scheme and `401` / `403` responses with runtime behavior
+
+The stateless configuration has been supplied as the next exercise; its execution has not yet been confirmed. OAuth2, OpenID Connect and JWT remain upcoming.
+
+Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
 
 ---
 
