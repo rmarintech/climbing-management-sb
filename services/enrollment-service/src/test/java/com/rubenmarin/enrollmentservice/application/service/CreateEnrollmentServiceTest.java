@@ -9,7 +9,7 @@ import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
-//a pure unit test for CreateEnrollmentService using fake/mock ports.
+//Pure unit test for CreateEnrollmentService using fake/mock ports.
 class CreateEnrollmentServiceTest {
 
     @Test
