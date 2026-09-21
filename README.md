@@ -62,6 +62,9 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * kubectl
 * Helm
 * Trivy
+* JUnit 5
+* Mockito
+* Testcontainers
 
 ---
 
@@ -84,6 +87,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Kafka / Event-Driven Architecture | [KAFKA.md](docs/KAFKA.md) |
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
+| Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
 
 ---
 
@@ -212,6 +216,12 @@ OpenAPI security alignment      ✅
         ↓
 Security                        ✅
         ↓
+Unit testing                    ✅
+        ↓
+Mockito                         ✅
+        ↓
+Mongo Testcontainers            ✅
+        ↓
 Testing                         🚧 CURRENT
         ↓
 Advanced Backend Engineering    ⏳
@@ -221,7 +231,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Security phase is complete** for the planned course scope. The Enrollment Service is a Keycloak-backed OAuth2 Resource Server using Authorization Code + PKCE for the Postman client, JWT issuer and audience validation, Keycloak realm-role mapping and Spring Security RBAC. The complete runtime matrix was verified: no-token GET → `401`, `ruben` GET → `200`, admin GET → `200`, no-token POST → `401`, `ruben` POST → `403`, and admin POST → `201`. The OpenAPI contract now declares Bearer JWT authentication and reusable `401` / `403` responses, and `mvn clean verify` validates the updated contract. **Testing is now the current phase.**
+The **Security phase is complete** and **Testing is now the current phase**. The Enrollment Service already had pure domain, application-service and adapter unit tests from the DDD/Hexagonal work. The testing phase has now added dedicated Mockito coverage for the application services and introduced real MongoDB integration testing with Testcontainers. `MongoEnrollmentAdapterIntegrationTest` runs against a temporary MongoDB container wired into Spring Boot with `@ServiceConnection`, verifies Domain → Mongo persistence, and verifies Mongo → Domain rehydration. Repository-specific and REST API integration tests are the next testing milestones.
 
 ---
 
@@ -799,6 +809,34 @@ Detailed notes: [SECURITY.md](docs/SECURITY.md)
 
 ---
 
+# 🧪 Testing
+
+The project now combines several testing styles instead of relying on a single approach.
+
+```text
+Pure unit tests
+    ↓
+JUnit + hand-written fake ports
+    ↓
+JUnit + Mockito
+    ↓
+Spring MongoDB test slice
+    ↓
+Testcontainers
+    ↓
+Real MongoDB integration tests
+```
+
+The existing DDD/Hexagonal tests cover the framework-free domain and application layers. The current testing phase added dedicated Mockito tests for `CreateEnrollmentService` and `FindEnrollmentsService`, including stubbing, interaction verification, `never()` and `ArgumentCaptor`.
+
+The Mongo persistence boundary is now tested with a real MongoDB container using `@DataMongoTest`, `@Testcontainers`, `@Container`, `@ServiceConnection`, and `@Import(MongoEnrollmentAdapter.class)`. The integration tests verify both Domain → Mongo persistence and Mongo → Domain rehydration.
+
+A full `@SpringBootTest` was intentionally avoided for this persistence-focused test because it loaded unrelated infrastructure such as the Course REST adapter and required `course-service.base-url`. The narrower `@DataMongoTest` slice is the correct boundary here.
+
+Detailed notes: [TESTING.md](docs/TESTING.md)
+
+---
+
 # 🐳 Independent Containerization
 
 Both applications have independent Docker build boundaries.
@@ -1028,6 +1066,10 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Keycloak
 * Role-based access control
 * Testing
+* JUnit 5 unit testing
+* Mockito mocks, stubbing, verification and ArgumentCaptor
+* Integration testing with Spring test slices
+* Testcontainers with real MongoDB
 * Observability
 * Scalability
 * System design
@@ -1043,4 +1085,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `DataMongoTest`

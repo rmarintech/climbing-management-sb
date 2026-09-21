@@ -355,12 +355,40 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
 
 # 🚧 Current — Testing
 
-- [ ] Unit tests
-- [ ] Mockito
-- [ ] Integration tests
-- [ ] Testcontainers
+- [x] Unit tests
+  - [x] Pure domain unit tests
+  - [x] Application service unit tests with hand-written fake ports
+  - [x] Outbound adapter unit tests
+- [x] Mockito fundamentals
+  - [x] `@Mock`
+  - [x] `@InjectMocks`
+  - [x] `when(...).thenReturn(...)`
+  - [x] `thenAnswer(...)`
+  - [x] `verify(...)`
+  - [x] `never()`
+  - [x] `ArgumentCaptor`
+  - [x] `CreateEnrollmentServiceMockitoTest`
+  - [x] `FindEnrollmentsServiceMockitoTest`
+- [x] Integration-test fundamentals
+  - [x] Test slice vs full `@SpringBootTest`
+  - [x] `@DataMongoTest`
+  - [x] `@Import(MongoEnrollmentAdapter.class)`
+- [x] Testcontainers fundamentals
+  - [x] `spring-boot-testcontainers`
+  - [x] JUnit Jupiter Testcontainers integration
+  - [x] MongoDB Testcontainers module
+  - [x] `@Testcontainers`
+  - [x] `@Container`
+  - [x] `@ServiceConnection`
+  - [x] Real MongoDB container used by Spring Boot tests
+- [x] Mongo persistence adapter integration tests
+  - [x] Domain `Enrollment` → MongoDB persistence
+  - [x] MongoDB `EnrollmentDocument` → Domain `Enrollment` rehydration
+  - [x] Test database cleanup with `@BeforeEach`
 - [ ] Repository tests
 - [ ] REST API tests
+
+Current testing documentation: [TESTING.md](TESTING.md).
 
 ---
 
@@ -522,6 +550,12 @@ JWT audience / role mapping     ✅
 OpenAPI security alignment      ✅
         ↓
 Security                        ✅
+        ↓
+Unit testing                    ✅
+        ↓
+Mockito                         ✅
+        ↓
+Mongo Testcontainers            ✅
         ↓
 Testing                         🚧 CURRENT
         ↓
