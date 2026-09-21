@@ -14,6 +14,9 @@ paths:
       summary: Get all enrollments
       operationId: getEnrollments
 
+      security:
+        - bearerAuth: []
+
       responses:
         '200':
           description: List of enrollments
@@ -23,12 +26,20 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/EnrollmentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 
     post:
       summary: Create an enrollment
       # operationId: Unique logical name for the API operation
       operationId: createEnrollment
+
+      security:
+        - bearerAuth: [ ]
 
       # requestBody: Contract accepted from the client
       requestBody:
@@ -47,6 +58,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnrollmentResponse'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
         '404':
           description: Course not found
@@ -70,7 +87,22 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
 components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Authentication is required or the access token is invalid
+
+    Forbidden:
+      description: The authenticated user does not have sufficient permissions
+
   schemas:
+
     # EnrollmentRequest:
     # courseId >= 1
     # studentName length >= 1
