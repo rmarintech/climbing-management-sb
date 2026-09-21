@@ -1,12 +1,12 @@
-# Course Management API
+# Climbing Management Backend
 
-A backend application built with **Java 21 and Spring Boot** to manage climbing courses.
+A backend system built with Java 21 and Spring Boot for managing climbing courses and enrollments.
 
-The project is designed as a practical **Senior Backend Java** portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, dynamic queries, aggregation, containerization, CI/CD, Kubernetes orchestration, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, and modern deployment practices.
+The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, and modern deployment practices.
 
-The application is developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
+The application has been developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
-The project has now evolved from a single Spring Boot backend into a small **microservices architecture** with independent applications, persistence, container images, CI builds, GHCR packages, and Kubernetes deployments.
+The project has evolved from a single Spring Boot backend into a small microservices architecture with independently runnable services, separate persistence boundaries, REST and event-driven communication, independent container images, CI builds, GHCR packages, Kubernetes deployments, and centralized authentication with Keycloak.
 
 ---
 
@@ -200,17 +200,19 @@ Generated API models            ✅
         ↓
 Generated API interface         ✅
         ↓
-HTTP Basic / RBAC / CSRF          ✅
+HTTP Basic / RBAC / CSRF        ✅
         ↓
-OAuth2 / OIDC / JWT              ✅
+OAuth2 / OIDC / JWT             ✅
         ↓
-Keycloak Resource Server         ✅
+Keycloak Resource Server        ✅
         ↓
-JWT audience / role mapping      ✅
+JWT audience / role mapping     ✅
         ↓
-OpenAPI security alignment       🚧 CURRENT
+OpenAPI security alignment      ✅
         ↓
-Testing                         ⏳
+Security                        ✅
+        ↓
+Testing                         🚧 CURRENT
         ↓
 Advanced Backend Engineering    ⏳
         ↓
@@ -219,7 +221,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-Current security checkpoint: the Enrollment Service has progressed from the initial HTTP Basic/RBAC exercise to a working **Keycloak-backed OAuth2 Resource Server**. Postman obtains JWT access tokens through **Authorization Code + PKCE**; Spring validates the `climbing` realm issuer and the `enrollment-service` audience, maps Keycloak realm roles to Spring authorities, and enforces the existing RBAC rules. The Bearer-token flow has been verified with no token → `401`, `ruben` GET `/enrollments` → `200`, and the `admin` role behaving as intended. The next security step is to align the OpenAPI contract with the Bearer security scheme and `401` / `403` responses.
+The **Security phase is complete** for the planned course scope. The Enrollment Service is a Keycloak-backed OAuth2 Resource Server using Authorization Code + PKCE for the Postman client, JWT issuer and audience validation, Keycloak realm-role mapping and Spring Security RBAC. The complete runtime matrix was verified: no-token GET → `401`, `ruben` GET → `200`, admin GET → `200`, no-token POST → `401`, `ruben` POST → `403`, and admin POST → `201`. The OpenAPI contract now declares Bearer JWT authentication and reusable `401` / `403` responses, and `mvn clean verify` validates the updated contract. **Testing is now the current phase.**
 
 ---
 
@@ -626,20 +628,26 @@ application use cases
 domain
 ```
 
-The OpenAPI contract defines both operations and their important response behavior:
+The OpenAPI contract defines both operations and their important response behavior, including the security boundary:
 
 ```text
-GET  /enrollments
-└── 200 → EnrollmentResponse[]
+GET /enrollments
+├── 200 → EnrollmentResponse[]
+├── 401 → Unauthorized
+└── 403 → Forbidden
 
 POST /enrollments
 ├── 201 → EnrollmentResponse
 ├── 400 → ErrorResponse
+├── 401 → Unauthorized
+├── 403 → Forbidden
 ├── 404 → ErrorResponse
 └── 503 → ErrorResponse
 ```
 
-Maven validates the specification during the build. A deliberately broken OpenAPI version was tested and correctly failed the build. The same contract generates the HTTP request/response/error models and the `EnrollmentsApi` interface.
+The contract now defines an HTTP Bearer scheme with `bearerFormat: JWT`, and both GET and POST declare `bearerAuth` as an operation security requirement. The concrete role rules remain runtime concerns in Spring Security: GET allows USER or ADMIN, while POST requires ADMIN.
+
+Maven validates the specification during the build. A deliberately broken OpenAPI version was tested and correctly failed the build. The same contract generates the HTTP request/response/error models and the `EnrollmentsApi` interface. The OpenAPI YAML is therefore a real build input and must also be copied into the Enrollment Service Docker builder before Maven runs.
 
 The generated request model carries Bean Validation constraints derived from the contract, such as `@Min(1)` for `courseId`. `EnrollmentController` implements the generated interface, so the HTTP mappings are now generated from the OpenAPI source of truth rather than duplicated manually in the controller.
 
@@ -759,21 +767,33 @@ RBAC
 EnrollmentController
 ```
 
-Verified behavior includes:
+Verified behavior includes the complete runtime matrix:
 
 ```text
-No Bearer token
-→ 401
+GET  + no token     → 401
+GET  + ruben/USER   → 200
+GET  + admin/ADMIN  → 200
 
-ruben + USER
-→ GET /enrollments
-→ 200
-
-admin + ADMIN
-→ protected admin behavior allowed
+POST + no token     → 401
+POST + ruben/USER   → 403
+POST + admin/ADMIN  → 201
 ```
 
-The remaining security-contract task is to update OpenAPI with the Bearer authentication scheme and explicit `401` / `403` responses.
+The OpenAPI security contract is now aligned with the runtime model:
+
+```text
+components.securitySchemes.bearerAuth
+        ↓
+HTTP Bearer / JWT
+        ↓
+GET + POST security requirement
+        ↓
+reusable 401 / 403 responses
+```
+
+OpenAPI documents the authentication boundary and possible security responses; Spring Security still performs the runtime JWT validation and RBAC enforcement.
+
+The OpenAPI YAML is also a Maven build input. The Enrollment Service Docker builder now copies `openapi/` before running Maven. This fixed the CI Docker failure where `/app/openapi/enrollment-api.yaml` was missing, and the pipeline returned to green.
 
 Detailed notes: [SECURITY.md](docs/SECURITY.md)
 

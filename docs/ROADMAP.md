@@ -309,7 +309,7 @@ After a milestone:
 
 ---
 
-# 🚧 Current — Security
+# ✅ Completed — Security
 
 - [x] Spring Security introduced in the Enrollment Service
 - [x] Authentication with HTTP Basic
@@ -335,16 +335,25 @@ After a milestone:
 - [x] Keycloak `realm_access.roles` mapped to Spring authorities
 - [x] Bearer-token authentication verified: no token → `401`
 - [x] JWT RBAC verified: `ruben` GET `/enrollments` → `200`
-- [x] JWT RBAC verified with `admin`
-- [ ] Align OpenAPI Bearer security scheme and `401` / `403` responses with runtime behavior
+- [x] JWT RBAC verified: `admin` GET `/enrollments` → `200`
+- [x] JWT RBAC verified: no token POST `/enrollments` → `401`
+- [x] JWT RBAC verified: `ruben` POST `/enrollments` → `403`
+- [x] JWT RBAC verified: `admin` POST `/enrollments` → `201`
+- [x] OpenAPI Bearer `securitySchemes` definition
+- [x] OpenAPI Bearer requirement applied to GET and POST operations
+- [x] Reusable OpenAPI `401 Unauthorized` response
+- [x] Reusable OpenAPI `403 Forbidden` response
+- [x] OpenAPI security contract validated with `mvn clean verify`
+- [x] Enrollment Docker build updated to include `openapi/` as a Maven build input
+- [x] CI verified green after OpenAPI Docker build fix
 
-The Keycloak OAuth2/OIDC/JWT Resource Server flow is now working end to end. The remaining security checkpoint is to bring the OpenAPI contract in line with the implemented Bearer-token security model.
+The Enrollment Service now has an end-to-end Keycloak OAuth2/OIDC/JWT Resource Server flow, role-based authorization, a verified runtime security matrix, and an OpenAPI contract aligned with Bearer authentication and `401` / `403` responses.
 
 Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
 
 ---
 
-# 🔜 Testing
+# 🚧 Current — Testing
 
 - [ ] Unit tests
 - [ ] Mockito
@@ -502,17 +511,19 @@ Generated API models            ✅
         ↓
 Generated API interface         ✅
         ↓
-HTTP Basic / RBAC / CSRF          ✅
+HTTP Basic / RBAC / CSRF        ✅
         ↓
-OAuth2 / OIDC / JWT              ✅
+OAuth2 / OIDC / JWT             ✅
         ↓
-Keycloak Resource Server         ✅
+Keycloak Resource Server        ✅
         ↓
-JWT audience / role mapping      ✅
+JWT audience / role mapping     ✅
         ↓
-OpenAPI security alignment       🚧 CURRENT
+OpenAPI security alignment      ✅
         ↓
-Testing                         ⏳
+Security                        ✅
+        ↓
+Testing                         🚧 CURRENT
         ↓
 Advanced Backend Engineering    ⏳
         ↓
