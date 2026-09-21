@@ -33,7 +33,11 @@ RUN chmod +x mvnw
 # when source code changes but pom.xml does not.
 RUN ./mvnw dependency:go-offline
 
+# Application source code
 COPY src ./src
+
+# OpenAPI contract required by OpenAPI Generator during Maven build
+COPY openapi ./openapi
 
 RUN ./mvnw clean package -DskipTests
 
