@@ -385,8 +385,32 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
   - [x] Domain `Enrollment` → MongoDB persistence
   - [x] MongoDB `EnrollmentDocument` → Domain `Enrollment` rehydration
   - [x] Test database cleanup with `@BeforeEach`
-- [ ] Repository tests
-- [ ] REST API tests
+- [x] Repository persistence coverage
+  - [x] Real `MongoRepository` operations exercised through Testcontainers
+  - [x] Dedicated repository-query tests intentionally skipped because `EnrollmentRepository` declares no custom queries
+- [x] REST API MVC/security slice tests
+  - [x] `@WebMvcTest(EnrollmentController.class)`
+  - [x] `@MockitoBean` for Spring-managed mocked use cases
+  - [x] `@Import(SecurityConfiguration.class)`
+  - [x] `@EnableWebSecurity` for `HttpSecurity` in the MVC slice
+  - [x] Mock `JwtDecoder` bean
+  - [x] Spring Security `jwt()` request post-processor
+  - [x] GET without JWT → `401`
+  - [x] GET with `ROLE_USER` → `200`
+  - [x] GET with `ROLE_ADMIN` → `200`
+  - [x] POST without JWT → `401`
+  - [x] POST with `ROLE_USER` → `403`
+  - [x] POST with `ROLE_ADMIN` → `201`
+  - [x] JSON request → `CreateEnrollmentCommand` mapping verified with `ArgumentCaptor`
+  - [x] Domain result → JSON response mapping verified
+  - [x] Invalid `courseId` → `400`
+  - [x] Blank `studentName` → `400`
+  - [x] Rejected requests verified not to invoke the use case
+- [ ] Full HTTP integration tests
+  - [ ] Full Spring application context
+  - [ ] Real MongoDB Testcontainer
+  - [ ] Mock JWT authentication without real Keycloak
+  - [ ] HTTP → controller → application → persistence → MongoDB
 
 Current testing documentation: [TESTING.md](TESTING.md).
 
@@ -556,6 +580,8 @@ Unit testing                    ✅
 Mockito                         ✅
         ↓
 Mongo Testcontainers            ✅
+        ↓
+REST MVC / security tests       ✅
         ↓
 Testing                         🚧 CURRENT
         ↓

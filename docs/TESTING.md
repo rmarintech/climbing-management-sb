@@ -34,7 +34,8 @@ The goal is to use the lightest useful test for each responsibility:
 - domain invariants → pure unit tests
 - application orchestration → fake ports or Mockito
 - persistence mapping → real database integration tests
-- REST/security behavior → API integration tests later in the phase
+- REST/security behavior → focused MVC slice tests
+- full request-to-database behavior → full application HTTP integration tests
 
 ---
 
@@ -51,6 +52,7 @@ MongoEnrollmentAdapterTest
 CreateEnrollmentServiceTest
 FindEnrollmentsServiceTest
 EnrollmentTest
+EnrollmentControllerTest
 ```
 
 The application-service tests use hand-written fake ports.
@@ -772,7 +774,206 @@ Adapters
 
 ---
 
-## 22. Useful commands
+## 22. Repository-specific test decision
+
+`EnrollmentRepository` currently only extends `MongoRepository<EnrollmentDocument, String>` and declares no custom query logic. The Testcontainers-backed Mongo integration tests already exercise real `save`, `findById`, `findAll`, and `deleteAll` behavior. A separate repository-only test class would therefore mostly re-test Spring Data itself.
+
+```text
+repository persistence coverage   ✅
+custom repository-query tests     N/A for now
+```
+
+If custom derived queries or `@Query` methods are added later, they should receive dedicated real-Mongo integration tests.
+
+---
+
+## 23. REST MVC testing with `@WebMvcTest`
+
+The next boundary moved outward to the HTTP adapter:
+
+```java
+@WebMvcTest(EnrollmentController.class)
+@Import(SecurityConfiguration.class)
+class EnrollmentControllerTest {
+}
+```
+
+This loads a focused MVC slice: controller, Spring MVC, JSON mapping, Bean Validation and the web/security filter chain, without loading the full application infrastructure.
+
+---
+
+## 24. `@Mock` vs `@MockitoBean`
+
+Pure Mockito tests use `@Mock` + `@InjectMocks` because Mockito owns the object graph. In a `@WebMvcTest`, Spring creates `EnrollmentController`, so its mocked dependencies must be Spring beans:
+
+```java
+@MockitoBean
+private CreateEnrollmentUseCase createEnrollmentUseCase;
+
+@MockitoBean
+private FindEnrollmentsUseCase findEnrollmentsUseCase;
+```
+
+Mental model:
+
+```text
+@Mock
+→ Mockito-only object
+
+@MockitoBean
+→ Mockito mock
+→ registered in Spring ApplicationContext
+→ injected into Spring-managed bean
+```
+
+---
+
+## 25. Real security configuration in the MVC slice
+
+The test imports the production `SecurityConfiguration` instead of disabling security. The MVC slice initially failed because `SecurityFilterChain` required `HttpSecurity`, which was not available in the narrowed context. The production configuration was made explicit with `@EnableWebSecurity`, allowing the slice to build the servlet security infrastructure.
+
+A mocked decoder satisfies the OAuth2 Resource Server dependency without starting Keycloak:
+
+```java
+@MockitoBean
+private JwtDecoder jwtDecoder;
+```
+
+---
+
+## 26. Mock JWT authentication
+
+Spring Security test support supplies authenticated JWT requests through `jwt()`:
+
+```java
+get("/enrollments")
+    .with(jwt().authorities(
+        new SimpleGrantedAuthority("ROLE_USER")
+    ));
+```
+
+This tests the real authorization rules without needing a signed token or running Keycloak.
+
+```text
+tested here
+├── SecurityFilterChain endpoint rules
+├── ROLE_USER / ROLE_ADMIN authorization
+├── controller invocation
+└── HTTP status / JSON behavior
+
+not tested here
+├── Keycloak login
+├── JWT signature verification
+├── issuer validation
+├── audience validation
+└── realm_access.roles conversion
+```
+
+---
+
+## 27. GET security matrix
+
+```text
+GET /enrollments
+├── no JWT      → 401
+├── ROLE_USER   → 200
+└── ROLE_ADMIN  → 200
+```
+
+The unauthenticated test also verifies that `FindEnrollmentsUseCase` is never called.
+
+Successful requests verify the response JSON fields: `id`, `courseId`, `studentName`, and `status`.
+
+---
+
+## 28. POST security matrix
+
+```text
+POST /enrollments
+├── no JWT      → 401
+├── ROLE_USER   → 403
+└── ROLE_ADMIN  → 201
+```
+
+For rejected requests, `CreateEnrollmentUseCase` is verified with `never()`.
+
+For ADMIN, the use case is stubbed to return a real domain `Enrollment`, and the response JSON is verified.
+
+---
+
+## 29. Controller `ArgumentCaptor`
+
+The successful ADMIN POST captures the exact `CreateEnrollmentCommand` passed by the controller:
+
+```java
+ArgumentCaptor<CreateEnrollmentCommand> commandCaptor =
+        ArgumentCaptor.forClass(CreateEnrollmentCommand.class);
+
+verify(createEnrollmentUseCase)
+        .createEnrollment(commandCaptor.capture());
+```
+
+This proves the HTTP request was mapped correctly:
+
+```text
+JSON request
+    ↓
+generated EnrollmentRequest
+    ↓
+EnrollmentController
+    ↓
+CreateEnrollmentCommand
+    ✅
+```
+
+The same test also verifies the opposite mapping from domain `Enrollment` to generated `EnrollmentResponse` JSON.
+
+---
+
+## 30. Bean Validation at the HTTP boundary
+
+The OpenAPI-generated request model carries Bean Validation constraints. The MVC tests now prove that invalid input is rejected before the use case runs:
+
+```text
+courseId = 0        → 400 ✅
+studentName = ""    → 400 ✅
+```
+
+This closes the contract-first validation path:
+
+```text
+OpenAPI constraint
+    ↓
+generated Bean Validation
+    ↓
+Spring MVC validation
+    ↓
+400 Bad Request
+    ↓
+use case not called
+```
+
+---
+
+## 31. What the controller slice now proves
+
+```text
+authentication boundary                    ✅
+authorization rules                        ✅
+401 / 403 / 200 / 201 behavior             ✅
+request JSON deserialization               ✅
+response JSON serialization                ✅
+controller → command mapping               ✅
+ArgumentCaptor usage                       ✅
+Bean Validation                            ✅
+invalid/unauthorized requests short-circuit ✅
+```
+
+This remains a slice test because the application use cases are mocked. The full request path into real persistence is still pending.
+
+---
+
+## 32. Useful commands
 
 Run all Enrollment Service tests:
 
@@ -784,6 +985,12 @@ Run only the Mongo integration test:
 
 ```powershell
 .\mvnw -Dtest=MongoEnrollmentAdapterIntegrationTest test
+```
+
+Run only the REST MVC/security tests:
+
+```powershell
+.\mvnw -Dtest=EnrollmentControllerTest test
 ```
 
 Inspect Testcontainers dependencies:
@@ -800,7 +1007,7 @@ Inspect MongoDB test dependencies:
 
 ---
 
-## 23. Current checkpoint
+## 33. Current checkpoint
 
 Completed so far:
 
@@ -809,36 +1016,38 @@ Pure unit tests                          ✅
 JUnit 5                                  ✅
 Hand-written fake ports                  ✅
 Mockito fundamentals                     ✅
-@Mock                                    ✅
-@InjectMocks                             ✅
-when / thenReturn                        ✅
-thenAnswer                               ✅
-verify                                   ✅
-never                                    ✅
+@Mock / @InjectMocks                     ✅
+when / thenReturn / thenAnswer            ✅
+verify / never                           ✅
 ArgumentCaptor                           ✅
-CreateEnrollmentService Mockito tests    ✅
-FindEnrollmentsService Mockito tests     ✅
-Integration-test fundamentals            ✅
+Application-service Mockito tests        ✅
 @DataMongoTest                           ✅
 Testcontainers                           ✅
-MongoDBContainer                         ✅
-@ServiceConnection                       ✅
-Real Mongo persistence test              ✅
-Real Mongo rehydration test              ✅
+MongoDBContainer / @ServiceConnection    ✅
+Real Mongo persistence + rehydration     ✅
+Repository persistence coverage          ✅
+@WebMvcTest / MockMvc                    ✅
+@MockitoBean                             ✅
+Real SecurityConfiguration in MVC slice  ✅
+Mock JWT authentication                  ✅
+GET security matrix                      ✅
+POST security matrix                     ✅
+Request / response JSON mapping          ✅
+Generated Bean Validation                ✅
 ```
 
 Still upcoming:
 
 ```text
-Repository-specific tests                ⏳
-REST API tests                            ⏳
-HTTP/security integration tests           ⏳
+Full application HTTP integration        ⏳
+Real MongoDB in full HTTP path            ⏳
+HTTP → application → persistence          ⏳
 Additional failure-path integration tests ⏳
 ```
 
 ---
 
-## 24. Interview questions
+## 34. Interview questions
 
 **What is the difference between a mock and a fake?**
 
@@ -900,18 +1109,47 @@ No. A test that isolates a class using mocked collaborators is still a unit test
 
 No. Unit tests give fast isolated feedback; Testcontainers integration tests give confidence that real infrastructure integration works.
 
+**What is the difference between `@Mock` and `@MockitoBean`?**
+
+`@Mock` creates a Mockito object only. `@MockitoBean` creates a Mockito mock and registers it in the Spring `ApplicationContext`, so Spring-managed beans can receive it.
+
+**What is `@WebMvcTest` for?**
+
+It loads a focused MVC slice for controllers, JSON mapping, Bean Validation and web/security filters without loading the complete application infrastructure.
+
+**Why use Spring Security's `jwt()` in MVC tests?**
+
+It creates authenticated JWT-based test requests without requiring a running authorization server or a cryptographically valid token.
+
+**Why use `ArgumentCaptor` in the controller test?**
+
+To verify that the JSON request was transformed into the correct `CreateEnrollmentCommand`, not merely that the mocked use case was called.
+
+**Why were dedicated repository-query tests skipped?**
+
+Because `EnrollmentRepository` currently declares no project-specific queries. Its built-in persistence operations are already exercised against real MongoDB through the adapter integration tests.
+
+
 ---
 
-## 25. Next testing milestone
+## 35. Next testing milestone
 
-The next step is to continue outward from the persistence adapter:
+The next step is a **full application HTTP integration test**.
 
 ```text
-Repository tests
+MockMvc / HTTP request
         ↓
-REST API tests
+real SecurityFilterChain
         ↓
-HTTP + security integration
+real EnrollmentController
+        ↓
+real Application Service
+        ↓
+real MongoEnrollmentAdapter
+        ↓
+real MongoDB Testcontainer
 ```
+
+The goal is to stop mocking the application use cases and prove the complete Enrollment request path through Spring and MongoDB while still avoiding the external Keycloak dependency during automated tests.
 
 The testing phase remains **in progress**.
