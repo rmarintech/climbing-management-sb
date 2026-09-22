@@ -353,7 +353,7 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
 
 ---
 
-# 🚧 Current — Testing
+# ✅ Completed — Testing
 
 - [x] Unit tests
   - [x] Pure domain unit tests
@@ -406,11 +406,17 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
   - [x] Invalid `courseId` → `400`
   - [x] Blank `studentName` → `400`
   - [x] Rejected requests verified not to invoke the use case
-- [ ] Full HTTP integration tests
-  - [ ] Full Spring application context
-  - [ ] Real MongoDB Testcontainer
-  - [ ] Mock JWT authentication without real Keycloak
-  - [ ] HTTP → controller → application → persistence → MongoDB
+- [x] Full HTTP integration tests
+  - [x] Full Spring application context with `@SpringBootTest`
+  - [x] `MockMvc` through `@AutoConfigureMockMvc`
+  - [x] Real MongoDB Testcontainer
+  - [x] Mock JWT authentication without real Keycloak
+  - [x] External Course Service isolated through mocked `CourseRestAdapter`
+  - [x] Dummy `course-service.base-url` supplied only for configuration binding
+  - [x] GET: persisted Mongo document → real application → `200` JSON
+  - [x] POST success: ADMIN → real application → MongoDB → `201`
+  - [x] POST missing Course: real `CourseNotFoundException` / `GlobalExceptionHandler` → `404`
+  - [x] Missing-Course failure verified to leave MongoDB unchanged
 
 Current testing documentation: [TESTING.md](TESTING.md).
 
@@ -583,9 +589,11 @@ Mongo Testcontainers            ✅
         ↓
 REST MVC / security tests       ✅
         ↓
-Testing                         🚧 CURRENT
+Full HTTP integration tests     ✅
         ↓
-Advanced Backend Engineering    ⏳
+Testing                         ✅
+        ↓
+Advanced Backend Engineering    🚧 CURRENT
         ↓
 System Design                   ⏳
 ```

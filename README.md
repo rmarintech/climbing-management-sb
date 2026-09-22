@@ -224,16 +224,18 @@ Mongo Testcontainers            ✅
         ↓
 REST MVC / security tests       ✅
         ↓
-Testing                         🚧 CURRENT
+Full HTTP integration tests     ✅
         ↓
-Advanced Backend Engineering    ⏳
+Testing                         ✅
+        ↓
+Advanced Backend Engineering    🚧 CURRENT
         ↓
 System Design                   ⏳
 ```
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Security phase is complete** and **Testing is now the current phase**. The Enrollment Service now combines pure domain tests, hand-written fake ports, Mockito unit tests, MongoDB integration tests with Testcontainers, and secured MVC slice tests. `MongoEnrollmentAdapterIntegrationTest` verifies Domain → Mongo persistence and Mongo → Domain rehydration against a real temporary MongoDB container. `EnrollmentControllerTest` reproduces the GET/POST authorization matrix with `MockMvc`, the real `SecurityConfiguration`, mocked JWT authentication, request/response mapping, controller-to-command mapping with `ArgumentCaptor`, and generated Bean Validation. Dedicated repository-query tests were intentionally not added because `EnrollmentRepository` currently declares no custom queries; its real persistence operations are already exercised through the Mongo integration tests. The next milestone is a full application HTTP integration test backed by a real MongoDB Testcontainer.
+The **Testing phase is now complete** for the planned course scope. The Enrollment Service combines pure domain tests, hand-written fake ports, Mockito unit tests, MongoDB persistence integration tests with Testcontainers, secured MVC slice tests, and full service-level HTTP integration tests. `EnrollmentHttpIntegrationTest` loads the full Spring application context with `@SpringBootTest`, uses `MockMvc` through `@AutoConfigureMockMvc`, keeps the Enrollment controller/application/persistence stack real, uses a real MongoDB Testcontainer, and mocks only external boundaries such as JWT decoding and the Course REST adapter. The verified full paths now include GET from MongoDB to `200` JSON, successful ADMIN POST to MongoDB with `201`, and the missing-Course failure path to `404` with no persistence side effect. **Advanced Backend Engineering is now the current phase.**
 
 ---
 
@@ -813,7 +815,7 @@ Detailed notes: [SECURITY.md](docs/SECURITY.md)
 
 # 🧪 Testing
 
-The Enrollment Service now uses multiple testing levels, keeping each test focused on the smallest useful boundary.
+The planned Testing phase is complete and now covers multiple levels, from framework-free domain tests to full service-level HTTP integration.
 
 ```text
 Pure domain tests
@@ -826,28 +828,54 @@ Mongo persistence integration
         ↓
 REST MVC / security slice
         ↓
-Full HTTP integration              ← next
+Full HTTP integration
+        ✅
 ```
 
-Current automated coverage includes pure JUnit tests, Mockito (`@Mock`, `@InjectMocks`, stubbing, verification and `ArgumentCaptor`), real MongoDB integration with `@DataMongoTest` + Testcontainers, and secured controller tests with `@WebMvcTest`, `MockMvc`, `@MockitoBean`, the real `SecurityConfiguration`, and Spring Security's `jwt()` test support.
-
-The MVC slice now verifies the complete endpoint matrix:
+Current automated coverage includes:
 
 ```text
-GET  + no JWT       → 401 ✅
-GET  + ROLE_USER    → 200 ✅
-GET  + ROLE_ADMIN   → 200 ✅
+Domain / application
+├── pure JUnit tests
+├── hand-written fake ports
+├── Mockito @Mock / @InjectMocks
+├── stubbing and interaction verification
+└── ArgumentCaptor
 
-POST + no JWT       → 401 ✅
-POST + ROLE_USER    → 403 ✅
-POST + ROLE_ADMIN   → 201 ✅
+Mongo persistence
+├── @DataMongoTest
+├── MongoDB Testcontainer
+├── @ServiceConnection
+├── Domain → Mongo persistence
+└── Mongo → Domain rehydration
+
+REST MVC / security
+├── @WebMvcTest
+├── MockMvc
+├── @MockitoBean
+├── real SecurityConfiguration
+├── mock JWT authentication
+├── GET: 401 / USER 200 / ADMIN 200
+├── POST: 401 / USER 403 / ADMIN 201
+├── request / response mapping
+└── generated Bean Validation → 400
+
+Full application HTTP integration
+├── @SpringBootTest
+├── @AutoConfigureMockMvc
+├── real Enrollment controller
+├── real application services
+├── real MongoEnrollmentAdapter
+├── real EnrollmentRepository
+├── real MongoDB Testcontainer
+├── mocked JwtDecoder / external identity boundary
+├── mocked CourseRestAdapter / external Course Service boundary
+├── GET persisted data → 200 JSON
+├── POST existing Course → 201 + persisted document
+└── POST missing Course → 404 + MongoDB unchanged
 ```
 
-It also verifies request JSON → `CreateEnrollmentCommand` mapping, domain → response JSON mapping, generated Bean Validation (`courseId = 0` and blank `studentName` → `400`), and that rejected requests never reach the application use case.
-
-`@Mock` remains appropriate for pure Mockito unit tests, while `@MockitoBean` is used in Spring slices because the mock must be registered in the Spring `ApplicationContext` and injected into Spring-managed beans.
-
-`EnrollmentRepository` currently declares no custom query methods, so a dedicated repository-only test class was intentionally skipped. Its real built-in `MongoRepository` operations are already exercised against MongoDB through the Testcontainers-backed persistence integration tests.
+The full integration tests intentionally mock only boundaries outside the Enrollment Service. Internal Enrollment components remain real, so the request path is exercised through controller, application service, persistence adapter, repository and MongoDB.
 
 Detailed theory and examples: [TESTING.md](docs/TESTING.md)
 

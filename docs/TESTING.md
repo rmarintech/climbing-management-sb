@@ -53,6 +53,7 @@ CreateEnrollmentServiceTest
 FindEnrollmentsServiceTest
 EnrollmentTest
 EnrollmentControllerTest
+EnrollmentHttpIntegrationTest
 ```
 
 The application-service tests use hand-written fake ports.
@@ -758,7 +759,7 @@ Application
 └── FindEnrollmentsServiceMockitoTest
     └── Mockito
 
-Adapters
+Adapters / persistence
 │
 ├── CourseRestAdapterTest
 │   └── isolated adapter test
@@ -770,6 +771,26 @@ Adapters
     ├── @DataMongoTest
     ├── Testcontainers
     └── real MongoDB
+
+REST boundary
+│
+└── EnrollmentControllerTest
+    ├── @WebMvcTest
+    ├── MockMvc
+    ├── real SecurityConfiguration
+    ├── @MockitoBean use cases
+    └── mock JWT authentication
+
+Full service integration
+│
+└── EnrollmentHttpIntegrationTest
+    ├── @SpringBootTest
+    ├── @AutoConfigureMockMvc
+    ├── real controller + application services
+    ├── real Mongo adapter + repository
+    ├── real MongoDB Testcontainer
+    ├── mock JwtDecoder
+    └── mock CourseRestAdapter
 ```
 
 ---
@@ -973,7 +994,212 @@ This remains a slice test because the application use cases are mocked. The full
 
 ---
 
-## 32. Useful commands
+## 33. Full application HTTP integration
+
+After the MVC slice was complete, testing moved one level higher with `EnrollmentHttpIntegrationTest`.
+
+```java
+@SpringBootTest(
+        properties = {
+                "course-service.base-url=http://localhost:9999"
+        }
+)
+@AutoConfigureMockMvc
+@Testcontainers
+class EnrollmentHttpIntegrationTest {
+}
+```
+
+The application use cases are no longer mocked.
+
+```text
+EnrollmentControllerTest
+
+MockMvc
+  ↓
+real Controller
+  ↓
+MOCK application use case
+  ✋ stops here
+```
+
+versus:
+
+```text
+EnrollmentHttpIntegrationTest
+
+MockMvc
+  ↓
+real SecurityFilterChain
+  ↓
+real EnrollmentController
+  ↓
+real application service
+  ↓
+real persistence adapter
+  ↓
+real repository
+  ↓
+REAL MongoDB Testcontainer
+  ✅
+```
+
+Only boundaries outside the Enrollment Service are mocked:
+
+```text
+JwtDecoder
+→ external authentication / Keycloak boundary
+
+CourseRestAdapter
+→ external Course Service boundary
+```
+
+---
+
+## 34. Why the dummy `course-service.base-url` property is still needed
+
+The full `@SpringBootTest` loads the complete application context, so Spring still resolves `${course-service.base-url}` during startup. The test supplies a deliberately dummy value:
+
+```java
+properties = {
+        "course-service.base-url=http://localhost:9999"
+}
+```
+
+It does not mean the test sends traffic to port `9999`.
+
+```text
+dummy property
+→ satisfies Spring configuration binding
+
+@MockitoBean CourseRestAdapter
+→ prevents the real external Course Service call
+```
+
+---
+
+## 35. Full GET integration path
+
+The GET test inserts an `EnrollmentDocument` into the real MongoDB Testcontainer and then exercises:
+
+```text
+GET HTTP request
+        ↓
+SecurityFilterChain
+        ↓
+EnrollmentController
+        ↓
+FindEnrollmentsService
+        ↓
+FindEnrollmentsPort
+        ↓
+MongoEnrollmentAdapter
+        ↓
+EnrollmentRepository
+        ↓
+real MongoDB Testcontainer
+        ↓
+MongoEnrollmentAdapter
+        ↓
+FindEnrollmentsService
+        ↓
+EnrollmentController
+        ↓
+HTTP 200 + JSON
+        ✅
+```
+
+The final `HTTP` in `HTTP → Controller → Application → MongoDB → HTTP` means the outgoing HTTP response, not another external HTTP call.
+
+---
+
+## 36. Full POST success path
+
+The POST success test stubs only the external Course boundary:
+
+```java
+when(courseRestAdapter.existsById(new CourseId(10L)))
+        .thenReturn(true);
+```
+
+The internal path remains real:
+
+```text
+POST HTTP request
+        ↓
+SecurityFilterChain
+        ↓
+ROLE_ADMIN
+        ↓
+EnrollmentController
+        ↓
+CreateEnrollmentService
+        ↓
+CourseRestAdapter MOCK → true
+        ↓
+new Enrollment domain object
+        ↓
+MongoEnrollmentAdapter
+        ↓
+EnrollmentRepository
+        ↓
+real MongoDB Testcontainer
+        ↓
+EnrollmentController
+        ↓
+HTTP 201 Created + JSON
+        ✅
+```
+
+The test also reads MongoDB afterward and verifies one persisted document with the expected `courseId`, `studentName`, and `PENDING` status.
+
+---
+
+## 37. Full POST missing-Course failure path
+
+The external Course boundary returns `false`:
+
+```java
+when(courseRestAdapter.existsById(new CourseId(999L)))
+        .thenReturn(false);
+```
+
+The real failure path is:
+
+```text
+POST /enrollments
+        ↓
+ROLE_ADMIN
+        ↓
+real EnrollmentController
+        ↓
+real CreateEnrollmentService
+        ↓
+CourseRestAdapter MOCK → false
+        ↓
+CourseNotFoundException
+        ↓
+real GlobalExceptionHandler
+        ↓
+HTTP 404 Not Found
+        ↓
+MongoDB remains empty
+        ✅
+```
+
+The database assertion proves that the failure response also prevented an unwanted persistence side effect.
+
+---
+
+## 38. Slice test vs full integration test
+
+`EnrollmentControllerTest` is an MVC slice: controller, validation, JSON and security are real, while application use cases are mocked.
+
+`EnrollmentHttpIntegrationTest` is a full service integration test: controller, application services, domain behavior, Mongo adapter, repository and MongoDB are real; only external service boundaries are mocked.
+
+---
+
+## 38. Useful commands
 
 Run all Enrollment Service tests:
 
@@ -1007,7 +1233,7 @@ Inspect MongoDB test dependencies:
 
 ---
 
-## 33. Current checkpoint
+## 39. Current checkpoint
 
 Completed so far:
 
@@ -1018,36 +1244,40 @@ Hand-written fake ports                  ✅
 Mockito fundamentals                     ✅
 @Mock / @InjectMocks                     ✅
 when / thenReturn / thenAnswer            ✅
-verify / never                           ✅
+verify / never                            ✅
 ArgumentCaptor                           ✅
-Application-service Mockito tests        ✅
 @DataMongoTest                           ✅
 Testcontainers                           ✅
-MongoDBContainer / @ServiceConnection    ✅
-Real Mongo persistence + rehydration     ✅
+MongoDBContainer                         ✅
+@ServiceConnection                       ✅
+Domain → Mongo persistence               ✅
+Mongo → Domain rehydration               ✅
 Repository persistence coverage          ✅
-@WebMvcTest / MockMvc                    ✅
+@WebMvcTest                              ✅
 @MockitoBean                             ✅
-Real SecurityConfiguration in MVC slice  ✅
-Mock JWT authentication                  ✅
-GET security matrix                      ✅
-POST security matrix                     ✅
-Request / response JSON mapping          ✅
+MockMvc                                  ✅
+REST security matrix                     ✅
+Request / response mapping               ✅
 Generated Bean Validation                ✅
+@SpringBootTest                          ✅
+@AutoConfigureMockMvc                    ✅
+Full GET HTTP integration                ✅
+Full POST success integration            ✅
+Full POST missing-Course integration     ✅
+Real MongoDB in full HTTP path            ✅
+No persistence on missing-Course failure ✅
 ```
 
-Still upcoming:
+Planned Testing phase status:
 
 ```text
-Full application HTTP integration        ⏳
-Real MongoDB in full HTTP path            ⏳
-HTTP → application → persistence          ⏳
-Additional failure-path integration tests ⏳
+Testing phase                            ✅ COMPLETE
+Next phase                               Advanced Backend Engineering
 ```
 
 ---
 
-## 34. Interview questions
+## 40. Interview questions
 
 **What is the difference between a mock and a fake?**
 
@@ -1132,24 +1362,23 @@ Because `EnrollmentRepository` currently declares no project-specific queries. I
 
 ---
 
-## 35. Next testing milestone
+## 41. Testing phase completion
 
-The next step is a **full application HTTP integration test**.
+The planned Testing phase is now complete.
 
 ```text
-MockMvc / HTTP request
+pure unit tests
         ↓
-real SecurityFilterChain
+Mockito
         ↓
-real EnrollmentController
+persistence integration
         ↓
-real Application Service
+Testcontainers
         ↓
-real MongoEnrollmentAdapter
+REST MVC/security testing
         ↓
-real MongoDB Testcontainer
+full service-level HTTP integration
+        ✅
 ```
 
-The goal is to stop mocking the application use cases and prove the complete Enrollment request path through Spring and MongoDB while still avoiding the external Keycloak dependency during automated tests.
-
-The testing phase remains **in progress**.
+The next roadmap phase is **Advanced Backend Engineering**.
