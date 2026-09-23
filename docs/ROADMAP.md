@@ -478,8 +478,20 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Heap utilization
   - [x] GC sawtooth interpretation
   - [x] Average GC pause duration
-- [ ] Kafka consumer lag dashboard
-- [ ] Custom business metrics
+- [x] Kafka messaging dashboard
+  - [x] Consumer lag by partition
+  - [x] Total consumer lag
+  - [x] Assigned partitions
+  - [x] Consumer throughput
+  - [x] Spring Kafka listener processing time
+  - [x] Spring Kafka listener failure-rate metric
+  - [x] Simulated listener failure observed through Micrometer
+  - [x] Retry / DLT path correlated with listener failure metrics
+- [ ] Custom Micrometer / business metrics — 🚧 CURRENT
+  - [ ] DLT event counter
+  - [ ] Enrollment-created counter
+  - [ ] Course-validation failure counter
+  - [ ] Duplicate Kafka event skip counter
 - [ ] Structured logging
 - [ ] Centralized logs / Loki
 - [ ] Trace-log correlation
@@ -668,7 +680,9 @@ Grafana HTTP dashboard          ✅
         ↓
 JVM saturation / GC metrics     ✅
         ↓
-Kafka consumer lag dashboard    🚧 CURRENT
+Kafka messaging observability   ✅
+        ↓
+Custom Micrometer metrics       🚧 CURRENT
         ↓
 Distributed tracing             ⏳
         ↓

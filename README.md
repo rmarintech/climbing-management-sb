@@ -91,7 +91,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
-| Observability, Micrometer, Prometheus, PromQL, Grafana and JVM metrics | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| Observability, Micrometer, Prometheus, PromQL, Grafana, JVM metrics and Kafka metrics | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
@@ -244,7 +244,9 @@ Grafana HTTP dashboard          ✅
         ↓
 JVM saturation / GC metrics     ✅
         ↓
-Kafka consumer lag dashboard    🚧 CURRENT
+Kafka messaging observability   ✅
+        ↓
+Custom Micrometer metrics       🚧 CURRENT
         ↓
 Distributed tracing             ⏳
         ↓
@@ -255,7 +257,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service now exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, a local Prometheus server scrapes and stores the time series, and Grafana visualizes service traffic, 5xx errors, HTTP latency percentiles, JVM CPU, heap behavior, heap utilization and GC pause duration. The next observability milestone is Kafka consumer lag, followed by the remaining tracing, logging, SLI/SLO and alerting work.
+The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, Prometheus scrapes and stores the time series, and Grafana now visualizes HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag by partition, total Kafka lag, assigned partitions, consumer throughput, listener processing time and listener failure rate. A deliberate Kafka listener failure was also used to verify that retry / DLT behavior is visible through the listener metrics. The next observability milestone is **custom Micrometer / business metrics**, starting with a dedicated DLT event counter.
 
 ---
 
@@ -968,7 +970,7 @@ histogram buckets
 p50 / p90 / p95 / p99 latency
 ```
 
-The Grafana dashboard currently contains two main areas:
+The Grafana dashboard currently contains three main areas:
 
 ```text
 Enrollment Service — HTTP Overview
@@ -983,6 +985,14 @@ Enrollment Service — Runtime / Saturation
 ├── Enrollment JVM Heap Memory
 ├── Enrollment JVM Heap Utilization
 └── Enrollment JVM GC Pause
+
+Enrollment Service — Dependencies / Messaging
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+└── Kafka Listener Failure Rate
 ```
 
 The heap panel demonstrates the expected JVM sawtooth pattern:
@@ -999,9 +1009,9 @@ memory reclaimed
 used heap drops
 ```
 
-The current local workload shows a stable post-GC heap baseline and short GC pauses. These observations are learning-environment measurements rather than production performance conclusions.
+The Kafka panels now show both backlog and processing behavior. In the healthy local steady state, both partitions and total consumer lag were `0`, while generated Course events produced visible consumer-throughput spikes. Spring Kafka listener timers expose processing duration and `result` / `exception` labels. A deliberate `Kafka Retry Test` processing failure was used to verify the failure series, retries and the DLT path through the observability stack.
 
-The next dashboard milestone is Kafka consumer lag, after which the observability work continues with tracing, structured/centralized logging, correlation, SLIs/SLOs and alerting.
+The next observability milestone is **custom Micrometer / business metrics**. Generic framework metrics can show listener failures, throughput and lag, but application-specific questions such as “how many records were sent to the DLT?” need explicit instrumentation. After custom metrics, the remaining work continues with distributed tracing, structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
 
 Detailed theory, configuration and PromQL examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
@@ -1162,34 +1172,6 @@ and:
 tags.
 
 The manual learning deployments currently use `latest`, while immutable commit-SHA images remain the preferred production-oriented deployment strategy.
-
----
-
-# 🎯 Learning Approach
-
-Each major topic is learned using the same practical loop:
-
-```text
-Theory
-   ↓
-Implementation
-   ↓
-Inspection
-   ↓
-API / Behaviour Testing
-   ↓
-Troubleshooting
-   ↓
-Interview-Level Understanding
-   ↓
-Code Cleanup
-   ↓
-Git Commit
-   ↓
-CI/CD Validation
-```
-
-The detailed examples for each step live in the corresponding topic document rather than in this README.
 
 ---
 

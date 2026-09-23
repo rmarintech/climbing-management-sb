@@ -498,36 +498,257 @@ Enrollment Service — Runtime / Saturation
 └── Enrollment JVM GC Pause
 
 
-20. NEXT — KAFKA OBSERVABILITY
-    ==============================
+20. KAFKA OBSERVABILITY
+    =======================
 
-Next dashboard row:
+Row:
 Enrollment Service — Dependencies / Messaging
 
-First metric:
-Kafka Consumer Lag
+Current panels:
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+└── Kafka Listener Failure Rate
 
-Raw query:
+21. KAFKA LAG BY PARTITION
+    ==========================
+
+Title: Kafka Lag by Partition
+Visualization: Time series
+
+PromQL:
+sum by (topic, partition) (
 kafka_consumer_fetch_manager_records_lag{
 job="enrollment-service"
 }
+)
 
-Aggregate total lag:
+Legend:
+{{topic}} / partition {{partition}}
+
+Unit: short
+Min: 0
+
+lag = 0 → consumer is caught up
+lag > 0 → records are waiting
+
+Current local result:
+partition 0 → 0
+partition 1 → 0
+
+22. KAFKA TOTAL CONSUMER LAG
+    ============================
+
+Title: Kafka Total Consumer Lag
+Visualization: Stat
+
+PromQL:
 sum(
 kafka_consumer_fetch_manager_records_lag{
 job="enrollment-service"
 }
 )
 
-Lag:
-latest Kafka offset - consumer offset
+Legend: Total Lag
+Unit: short
+Min: 0
 
-lag = 0
-→ consumer is caught up
+Current healthy local result:
+0
 
-lag > 0
-→ records are waiting to be consumed
+23. KAFKA ASSIGNED PARTITIONS
+    =============================
 
-lag continuously increasing
-→ consumer cannot keep up
-or may be stuck / unhealthy
+Title: Kafka Assigned Partitions
+Visualization: Stat
+
+PromQL:
+kafka_consumer_coordinator_assigned_partitions{
+job="enrollment-service"
+}
+
+Legend: Assigned Partitions
+Unit: short
+Min: 0
+
+Current local result:
+2
+
+Meaning:
+The current Enrollment consumer owns both course-events partitions.
+
+24. KAFKA CONSUMER THROUGHPUT
+    =============================
+
+Title: Kafka Consumer Throughput
+Visualization: Time series
+
+PromQL:
+sum(
+rate(
+kafka_consumer_fetch_manager_records_consumed_total{
+job="enrollment-service"
+}[1m]
+)
+)
+
+Legend: Records/sec
+Unit: records/sec
+Min: 0
+
+Useful correlation:
+throughput > 0 + lag = 0 → keeping up
+throughput > 0 + lag rising → falling behind
+throughput = 0 + lag > 0 → potentially stopped / blocked
+
+25. KAFKA LISTENER PROCESSING TIME
+    ==================================
+
+Title: Kafka Listener Processing Time
+Visualization: Time series
+
+PromQL:
+sum(
+rate(
+spring_kafka_listener_seconds_sum{
+job="enrollment-service"
+}[5m]
+)
+)
+/
+sum(
+rate(
+spring_kafka_listener_seconds_count{
+job="enrollment-service"
+}[5m]
+)
+)
+
+Legend: Avg Listener Time
+Unit: seconds (s)
+Min: 0
+
+26. KAFKA LISTENER FAILURE RATE
+    ===============================
+
+Title: Kafka Listener Failure Rate
+Visualization: Time series
+
+PromQL:
+100 *
+sum(
+rate(
+spring_kafka_listener_seconds_count{
+job="enrollment-service",
+result="failure"
+}[5m]
+)
+)
+/
+sum(
+rate(
+spring_kafka_listener_seconds_count{
+job="enrollment-service"
+}[5m]
+)
+)
+
+Legend: Listener Failure %
+Unit: Percent (0-100)
+Min: 0
+Max: 100
+
+Raw inspection:
+spring_kafka_listener_seconds_count{
+job="enrollment-service"
+}
+
+Useful labels:
+result
+exception
+name
+
+Important:
+A result="failure" series may not exist until a listener failure occurs.
+
+27. KAFKA FAILURE / RETRY / DLT EXPERIMENT
+    ===========================================
+
+The intentional "Kafka Retry Test" event was reused to verify observability.
+
+Observed:
+Course event
+→ listener failure
+→ retries
+→ result="failure" metric
+→ Grafana failure-rate spike
+→ retries exhausted
+→ course-events-dlt
+
+After the test, disable the artificial failure condition again.
+
+28. CURRENT DASHBOARD STRUCTURE
+    ===============================
+
+Enrollment Service — HTTP Overview
+├── Enrollment Traffic
+├── Enrollment 5xx Error Rate
+├── Enrollment GET p50 Latency
+├── Enrollment GET p95 Latency
+└── Enrollment GET p99 Latency
+
+Enrollment Service — Runtime / Saturation
+├── Enrollment JVM CPU
+├── Enrollment JVM Heap Memory
+├── Enrollment JVM Heap Utilization
+└── Enrollment JVM GC Pause
+
+Enrollment Service — Dependencies / Messaging
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+└── Kafka Listener Failure Rate
+
+29. PANEL LEGENDS
+    =================
+
+Enrollment Traffic → Requests/sec
+Enrollment 5xx Error Rate → 5xx %
+Enrollment GET p50 Latency → p50
+Enrollment GET p95 Latency → p95
+Enrollment GET p99 Latency → p99
+Enrollment JVM CPU → CPU
+Enrollment JVM Heap Memory A → Used Heap
+Enrollment JVM Heap Memory B → Committed Heap
+Enrollment JVM Heap Utilization → Heap Utilization
+Enrollment JVM GC Pause → Avg GC Pause
+Kafka Lag by Partition → {{topic}} / partition {{partition}}
+Kafka Total Consumer Lag → Total Lag
+Kafka Assigned Partitions → Assigned Partitions
+Kafka Consumer Throughput → Records/sec
+Kafka Listener Processing Time → Avg Listener Time
+Kafka Listener Failure Rate → Listener Failure %
+
+30. NEXT — CUSTOM MICROMETER METRICS
+    ====================================
+
+Framework metrics now cover:
+HTTP
+JVM
+MongoDB
+Kafka client
+Spring Kafka listener
+
+Next:
+Custom application / business metrics
+
+First planned metric:
+Dedicated DLT event counter
+
+Reason:
+Generic listener metrics can show failures, but they do not directly answer:
+"How many records were sent to course-events-dlt?"

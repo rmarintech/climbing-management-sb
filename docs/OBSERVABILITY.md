@@ -1323,53 +1323,79 @@ Observability is stronger when signals are correlated rather than interpreted in
 
 ---
 
-# 29. Kafka Consumer Lag — Next Dashboard Step
+# 29. Kafka Messaging Dashboard
 
-The Enrollment Service already exposes Kafka consumer metrics.
+The third Grafana row is now:
 
-Raw lag metric:
+```text
+Enrollment Service — Dependencies / Messaging
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+└── Kafka Listener Failure Rate
+```
 
+This row answers:
+```text
+Lag                     → Is work accumulating?
+Assigned partitions     → What partitions does this consumer own?
+Throughput              → How quickly are records consumed?
+Listener processing     → How long does application processing take?
+Listener failure rate   → How often does listener execution fail?
+```
+
+---
+
+# 30. Kafka Consumer Lag
+
+Raw metric:
 ```promql
 kafka_consumer_fetch_manager_records_lag{
   job="enrollment-service"
 }
 ```
 
-Lag concept:
-
+Concept:
 ```text
-latest broker offset
--
-consumer offset
-=
-consumer lag
-```
-
-Example:
-
-```text
-latest offset   = 1000
-consumer offset = 970
-
-lag = 30 records
+latest broker offset - consumer offset = consumer lag
 ```
 
 Interpretation:
-
 ```text
 lag = 0
-→ consumer caught up
+→ consumer is caught up
 
 lag > 0
-→ records waiting to be consumed
+→ records are waiting to be consumed
 
 lag continuously increasing
-→ producer may be outrunning consumer,
-  or consumer may be slow / blocked
+→ producer may be outrunning the consumer,
+  or the consumer may be slow / blocked
 ```
 
-After inspecting partition-level series, the planned service-level panel is:
+Lag by partition:
+```promql
+sum by (topic, partition) (
+  kafka_consumer_fetch_manager_records_lag{
+    job="enrollment-service"
+  }
+)
+```
 
+Legend:
+```text
+{{topic}} / partition {{partition}}
+```
+
+Current local result:
+```text
+course-events / partition 0 → 0
+course-events / partition 1 → 0
+```
+
+Total lag:
 ```promql
 sum(
   kafka_consumer_fetch_manager_records_lag{
@@ -1378,11 +1404,281 @@ sum(
 )
 ```
 
-This is the next active observability milestone.
+Recommended panel:
+```text
+Title: Kafka Total Consumer Lag
+Visualization: Stat
+Legend: Total Lag
+Min: 0
+```
+
+Current healthy local result:
+```text
+Total Lag = 0
+```
+
+Important limitation: these Kafka client metrics are exposed by the Enrollment JVM. If the whole service is down, Prometheus can no longer scrape its embedded consumer metrics. Production Kafka monitoring may therefore also use broker / consumer-group monitoring external to the application.
 
 ---
 
-# 30. Local Observability Architecture
+# 31. Kafka Assigned Partitions
+
+Query:
+```promql
+kafka_consumer_coordinator_assigned_partitions{
+  job="enrollment-service"
+}
+```
+
+Recommended panel:
+```text
+Title: Kafka Assigned Partitions
+Visualization: Stat
+Legend: Assigned Partitions
+Min: 0
+```
+
+Current local result:
+```text
+2
+```
+
+The running Enrollment consumer currently owns both `course-events` partitions. During a rebalance or when multiple consumers in the same group are running, ownership can move between instances.
+
+---
+
+# 32. Kafka Consumer Throughput
+
+Raw cumulative metric:
+```promql
+kafka_consumer_fetch_manager_records_consumed_total{
+  job="enrollment-service"
+}
+```
+
+Dashboard rate:
+```promql
+sum(
+  rate(
+    kafka_consumer_fetch_manager_records_consumed_total{
+      job="enrollment-service"
+    }[1m]
+  )
+)
+```
+
+Recommended panel:
+```text
+Title: Kafka Consumer Throughput
+Visualization: Time series
+Unit: records/sec
+Legend: Records/sec
+Min: 0
+```
+
+Useful correlation:
+```text
+throughput > 0 + lag = 0
+→ consumer is processing and keeping up
+
+throughput > 0 + lag rising
+→ consumer is processing but not fast enough
+
+throughput = 0 + lag > 0
+→ consumer may be stopped, blocked or unhealthy
+```
+
+The local experiment produced visible throughput spikes while total lag remained at `0`.
+
+---
+
+# 33. Kafka Listener Processing Time
+
+Spring Kafka exposes listener execution timers.
+
+Raw count:
+```promql
+spring_kafka_listener_seconds_count{
+  job="enrollment-service"
+}
+```
+
+Average listener processing duration:
+```promql
+sum(
+  rate(
+    spring_kafka_listener_seconds_sum{
+      job="enrollment-service"
+    }[5m]
+  )
+)
+/
+sum(
+  rate(
+    spring_kafka_listener_seconds_count{
+      job="enrollment-service"
+    }[5m]
+  )
+)
+```
+
+Recommended panel:
+```text
+Title: Kafka Listener Processing Time
+Visualization: Time series
+Unit: seconds (s)
+Legend: Avg Listener Time
+Min: 0
+```
+
+This measures application-level listener execution rather than only Kafka client transport behavior. Current local observations were in the millisecond range, but the sample is too small for production conclusions.
+
+---
+
+# 34. Kafka Listener Failure Rate
+
+The listener timer includes labels such as:
+```text
+name
+result
+exception
+```
+
+A healthy observed series used:
+```text
+result="success"
+exception="none"
+```
+
+Raw inspection:
+```promql
+spring_kafka_listener_seconds_count{
+  job="enrollment-service"
+}
+```
+
+Failure rate:
+```promql
+100 *
+sum(
+  rate(
+    spring_kafka_listener_seconds_count{
+      job="enrollment-service",
+      result="failure"
+    }[5m]
+  )
+)
+/
+sum(
+  rate(
+    spring_kafka_listener_seconds_count{
+      job="enrollment-service"
+    }[5m]
+  )
+)
+```
+
+Recommended panel:
+```text
+Title: Kafka Listener Failure Rate
+Visualization: Time series
+Unit: Percent (0-100)
+Legend: Listener Failure %
+Min: 0
+Max: 100
+```
+
+Important:
+```text
+0% with recent listener executions
+→ executions occurred and none failed
+
+No data
+→ a failure series may not exist yet,
+  or there may be no usable recent samples
+```
+
+A deserialization failure can happen before the application listener method is invoked, so not every Kafka failure mode is represented identically by the listener timer.
+
+---
+
+# 35. Failure / Retry / DLT Observability Experiment
+
+The existing Kafka retry exercise was reused as an observability experiment.
+
+The special event:
+```text
+Kafka Retry Test
+```
+
+was configured to deliberately fail during Enrollment listener processing.
+
+Observed flow:
+```text
+CourseCreatedEvent
+        ↓
+course-events
+        ↓
+Enrollment @KafkaListener
+        ↓
+simulated processing exception
+        ↓
+retry attempts
+        ↓
+listener failure metric appears
+        ↓
+retries exhausted
+        ↓
+course-events-dlt
+```
+
+This connected the earlier Kafka resilience work with the observability stack:
+```text
+runtime behavior
+→ Micrometer / Spring Kafka timer
+→ Prometheus
+→ PromQL
+→ Grafana
+```
+
+After the experiment, the artificial failure condition should be disabled again.
+
+---
+
+# 36. Automatic Metrics vs Custom Application Metrics
+
+Most metrics used so far are automatically provided by frameworks:
+```text
+HTTP metrics
+JVM / process metrics
+MongoDB metrics
+Kafka client metrics
+Spring Kafka listener metrics
+```
+
+They do not answer every application-specific question. Examples:
+```text
+How many records were sent to the DLT?
+How many enrollments were created?
+How many Course validations failed?
+How many duplicate Kafka events were skipped?
+```
+
+This introduces the next milestone:
+```text
+Custom Micrometer metrics
+```
+
+A planned first custom counter is a dedicated DLT-event metric, for example:
+```text
+climbing.kafka.dlt.events
+```
+
+The exact custom metric is not implemented yet.
+
+---
+
+# 37. Local Observability Architecture
 
 Current learning setup:
 
@@ -1417,7 +1713,7 @@ A later project step can integrate them into Docker Compose, where service-to-se
 
 ---
 
-# 31. Current Mental Model
+# 38. Current Mental Model
 
 ```text
 Application behavior
@@ -1441,13 +1737,13 @@ Current observability coverage:
 
 ```text
 Traffic      → HTTP request rate
-Errors       → 5xx percentage
-Latency      → average + p50/p95/p99
+Errors       → HTTP 5xx + Kafka listener failures
+Latency      → HTTP average + p50/p95/p99 + Kafka listener time
 Saturation   → CPU + heap + GC
-Messaging    → Kafka lag next
+Messaging    → lag + partitions + throughput + listener behavior
 ```
 
-The next broader stages are distributed tracing, structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
+The next active step is custom Micrometer / business metrics, beginning with a dedicated DLT-event counter. The broader stages after that are distributed tracing, structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
 
 ---
 
