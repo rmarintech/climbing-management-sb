@@ -31,7 +31,11 @@ public class SecurityConfiguration {
         http
                 .authorizeHttpRequests(authorize -> authorize
                         // Preserve the existing public health endpoint.
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(
+                                "/actuator/health",
+                                //WARN: For local development only:
+                                "/actuator/prometheus"
+                        ).permitAll()
 
                         // USER and ADMIN may read enrollments.
                         .requestMatchers(HttpMethod.GET, "/enrollments")
