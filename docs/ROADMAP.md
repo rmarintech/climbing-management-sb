@@ -424,9 +424,72 @@ Current testing documentation: [TESTING.md](TESTING.md).
 
 # 🔜 Advanced Backend Engineering
 
-- [ ] API versioning
+## Observability — 🚧 CURRENT
+
+- [x] Observability fundamentals
+  - [x] Instrumentation vs telemetry vs monitoring vs observability
+  - [x] Logs vs metrics vs traces
+  - [x] Golden Signals: latency, traffic, errors and saturation
+  - [x] Metric types: counter, gauge and timer
+  - [x] Tags / labels and cardinality
+  - [x] Time-series model
+- [x] Spring Boot / Micrometer metrics
+  - [x] Actuator health and metrics endpoints
+  - [x] `http.server.requests`
+  - [x] JVM / process metrics
+  - [x] MongoDB metrics
+  - [x] Kafka metrics
+- [x] Prometheus integration
+  - [x] `micrometer-registry-prometheus`
+  - [x] `/actuator/prometheus`
+  - [x] Local security exception for Prometheus scraping
+  - [x] Standalone Prometheus container
+  - [x] `prometheus.yml` scrape configuration
+  - [x] `host.docker.internal` host access from Docker
+  - [x] Target health with `up{job="enrollment-service"}`
+- [x] PromQL fundamentals
+  - [x] Instant vectors and range vectors
+  - [x] `rate(...)`
+  - [x] `increase(...)`
+  - [x] `sum(...)`
+  - [x] `sum by (...)`
+  - [x] HTTP traffic / requests per second
+  - [x] HTTP 5xx error rate
+  - [x] Average latency from `_sum / _count`
+- [x] HTTP latency histograms
+  - [x] Enable percentile histogram for `http.server.requests`
+  - [x] Cumulative `_bucket` metrics
+  - [x] `le` bucket boundaries
+  - [x] `histogram_quantile(...)`
+  - [x] p50 / p90 / p95 / p99
+  - [x] Tail-latency interpretation
+- [x] Grafana fundamentals
+  - [x] Standalone Grafana container with persistent volume
+  - [x] Prometheus data source
+  - [x] First service dashboard
+  - [x] Enrollment traffic panel
+  - [x] Enrollment 5xx error-rate panel
+  - [x] GET p50 latency panel
+  - [x] GET p95 latency panel
+  - [x] GET p99 latency panel
+- [x] JVM runtime / saturation dashboard
+  - [x] Process CPU
+  - [x] Heap used / committed memory
+  - [x] Heap utilization
+  - [x] GC sawtooth interpretation
+  - [x] Average GC pause duration
+- [ ] Kafka consumer lag dashboard
+- [ ] Custom business metrics
+- [ ] Structured logging
+- [ ] Centralized logs / Loki
+- [ ] Trace-log correlation
+- [ ] SLIs / SLOs
+- [ ] Alerting
+
+## Remaining Advanced Backend Engineering
+
 - [ ] Distributed tracing
-- [ ] Observability
+- [ ] API versioning
 - [ ] Performance
 - [ ] Scalability
 - [ ] System design
@@ -592,6 +655,22 @@ REST MVC / security tests       ✅
 Full HTTP integration tests     ✅
         ↓
 Testing                         ✅
+        ↓
+Observability fundamentals      ✅
+        ↓
+Micrometer / Actuator metrics   ✅
+        ↓
+Prometheus / PromQL             ✅
+        ↓
+HTTP histograms / percentiles   ✅
+        ↓
+Grafana HTTP dashboard          ✅
+        ↓
+JVM saturation / GC metrics     ✅
+        ↓
+Kafka consumer lag dashboard    🚧 CURRENT
+        ↓
+Distributed tracing             ⏳
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓

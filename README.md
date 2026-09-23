@@ -2,7 +2,7 @@
 
 A backend system built with Java 21 and Spring Boot for managing climbing courses and enrollments.
 
-The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, and modern deployment practices.
+The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, observability with Micrometer, Prometheus and Grafana, and modern deployment practices.
 
 The application has been developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -23,6 +23,7 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * Spring Data JPA
 * Spring Data MongoDB
 * Spring Boot Actuator
+* Micrometer
 * Spring Cloud Circuit Breaker
 * Spring Kafka
 * OpenAPI 3.0.3
@@ -43,6 +44,8 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * Apache Kafka 4.3 / KRaft
 * Kubernetes
 * Helm
+* Prometheus 3.14
+* Grafana 13.2
 
 ## CI/CD
 
@@ -88,6 +91,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
+| Observability, Micrometer, Prometheus, PromQL, Grafana and JVM metrics | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
@@ -228,6 +232,22 @@ Full HTTP integration tests     ✅
         ↓
 Testing                         ✅
         ↓
+Observability fundamentals      ✅
+        ↓
+Micrometer / Actuator metrics   ✅
+        ↓
+Prometheus / PromQL             ✅
+        ↓
+HTTP histograms / percentiles   ✅
+        ↓
+Grafana HTTP dashboard          ✅
+        ↓
+JVM saturation / GC metrics     ✅
+        ↓
+Kafka consumer lag dashboard    🚧 CURRENT
+        ↓
+Distributed tracing             ⏳
+        ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
 System Design                   ⏳
@@ -235,7 +255,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is now complete** for the planned course scope. The Enrollment Service combines pure domain tests, hand-written fake ports, Mockito unit tests, MongoDB persistence integration tests with Testcontainers, secured MVC slice tests, and full service-level HTTP integration tests. `EnrollmentHttpIntegrationTest` loads the full Spring application context with `@SpringBootTest`, uses `MockMvc` through `@AutoConfigureMockMvc`, keeps the Enrollment controller/application/persistence stack real, uses a real MongoDB Testcontainer, and mocks only external boundaries such as JWT decoding and the Course REST adapter. The verified full paths now include GET from MongoDB to `200` JSON, successful ADMIN POST to MongoDB with `201`, and the missing-Course failure path to `404` with no persistence side effect. **Advanced Backend Engineering is now the current phase.**
+The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service now exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, a local Prometheus server scrapes and stores the time series, and Grafana visualizes service traffic, 5xx errors, HTTP latency percentiles, JVM CPU, heap behavior, heap utilization and GC pause duration. The next observability milestone is Kafka consumer lag, followed by the remaining tracing, logging, SLI/SLO and alerting work.
 
 ---
 
@@ -881,6 +901,112 @@ Detailed theory and examples: [TESTING.md](docs/TESTING.md)
 
 ---
 
+# 📈 Observability
+
+The current **Advanced Backend Engineering** phase is focused on making the Enrollment Service observable from the outside.
+
+The local metrics flow is:
+
+```text
+Enrollment Service
+    │
+    │ Micrometer instrumentation
+    ▼
+Spring Boot Actuator
+    │
+    │ /actuator/prometheus
+    ▼
+Prometheus
+    │
+    │ PromQL
+    ▼
+Grafana
+    │
+    ▼
+Dashboards
+```
+
+Current local endpoints:
+
+```text
+Enrollment Service
+→ http://localhost:8081
+
+Prometheus
+→ http://localhost:9090
+
+Grafana
+→ http://localhost:3000
+```
+
+Prometheus currently runs as a standalone Docker container and scrapes the Enrollment Service running on the Windows host through:
+
+```text
+host.docker.internal:8081/actuator/prometheus
+```
+
+The application uses the Prometheus Micrometer registry and exposes the required Actuator endpoints:
+
+```properties
+management.endpoints.web.exposure.include=health,info,metrics,prometheus
+management.metrics.distribution.percentiles-histogram.http.server.requests=true
+```
+
+The HTTP histogram configuration enables cumulative `_bucket` metrics so Prometheus can calculate latency percentiles with `histogram_quantile(...)`.
+
+PromQL work completed so far includes:
+
+```text
+HTTP request counters
+rate(...)
+increase(...)
+sum(...)
+sum by (...)
+5xx error rate
+average HTTP latency
+histogram buckets
+p50 / p90 / p95 / p99 latency
+```
+
+The Grafana dashboard currently contains two main areas:
+
+```text
+Enrollment Service — HTTP Overview
+├── Enrollment Traffic
+├── Enrollment 5xx Error Rate
+├── Enrollment GET p50 Latency
+├── Enrollment GET p95 Latency
+└── Enrollment GET p99 Latency
+
+Enrollment Service — Runtime / Saturation
+├── Enrollment JVM CPU
+├── Enrollment JVM Heap Memory
+├── Enrollment JVM Heap Utilization
+└── Enrollment JVM GC Pause
+```
+
+The heap panel demonstrates the expected JVM sawtooth pattern:
+
+```text
+object allocation
+    ↓
+used heap rises
+    ↓
+garbage collection
+    ↓
+memory reclaimed
+    ↓
+used heap drops
+```
+
+The current local workload shows a stable post-GC heap baseline and short GC pauses. These observations are learning-environment measurements rather than production performance conclusions.
+
+The next dashboard milestone is Kafka consumer lag, after which the observability work continues with tracing, structured/centralized logging, correlation, SLIs/SLOs and alerting.
+
+Detailed theory, configuration and PromQL examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
+
+---
+
 # 🐳 Independent Containerization
 
 Both applications have independent Docker build boundaries.
@@ -1115,6 +1241,11 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Integration testing with Spring test slices
 * Testcontainers with real MongoDB
 * Observability
+* Micrometer and Spring Boot Actuator metrics
+* Prometheus and PromQL
+* Grafana dashboards
+* HTTP latency histograms and percentiles
+* JVM CPU, heap and GC metrics
 * Scalability
 * System design
 
@@ -1129,4 +1260,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `DataMongoTest`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `Micrometer` · `Prometheus` · `PromQL` · `Grafana` · `DataMongoTest`
