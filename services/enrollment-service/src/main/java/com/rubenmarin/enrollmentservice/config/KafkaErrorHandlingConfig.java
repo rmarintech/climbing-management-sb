@@ -1,6 +1,8 @@
 package com.rubenmarin.enrollmentservice.config;
 
 import com.rubenmarin.enrollmentservice.event.CourseCreatedEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -19,6 +21,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.RetryListener;
 import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
+import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -30,49 +33,27 @@ public class KafkaErrorHandlingConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaErrorHandlingConfig.class);
 
-    /**
-     * KafkaTemplate used to publish failed records to the DLT.
-     * It must support:
-     * byte[]
-     * -> deserialization failures
-     * CourseCreatedEvent
-     * -> listener / processing failures
-     */
-    @Bean
-    public KafkaTemplate<String, Object> deadLetterKafkaTemplate(KafkaProperties kafkaProperties) {
-
-        JacksonJsonSerializer<Object> jsonSerializer = new JacksonJsonSerializer<>();
-
-        // Do not expose Java class names in Kafka headers.
-        jsonSerializer.setAddTypeInfo(false);
-
-        Map<Class<?>, Serializer<?>> serializers = new LinkedHashMap<>();
-        serializers.put(byte[].class, new ByteArraySerializer());
-        serializers.put(CourseCreatedEvent.class, jsonSerializer);
-
-        DelegatingByTypeSerializer valueSerializer = new DelegatingByTypeSerializer(serializers);
-
-        DefaultKafkaProducerFactory<String, Object> producerFactory =
-                new DefaultKafkaProducerFactory<>(
-                        kafkaProperties.buildProducerProperties(),
-                        new StringSerializer(),
-                        valueSerializer
-                );
-
-        return new KafkaTemplate<>(producerFactory);
-    }
 
     /**
-     * Global Kafka listener error handler.
-     * Failed records are eventually published to:
-     * course-events-dlt
-     * using the same partition as the source record.
+     * Global Kafka listener error handler. Failed records are eventually published to:
+     * course-events-dlt using the same partition as the source record.
      */
     @Bean
     public CommonErrorHandler kafkaErrorHandler(
             @Qualifier("deadLetterKafkaTemplate")
-            KafkaTemplate<String, Object> kafkaTemplate
+            KafkaTemplate<String, Object> kafkaTemplate,
+            MeterRegistry meterRegistry
     ) {
+        // Custom Micrometer metric
+        Counter processingDltCounter = Counter.builder("climbing.kafka.dlt.events")
+                .description("Number of Kafka records recovered to the Dead Letter Topic")
+                .tag("reason", "processing")
+                .register(meterRegistry);
+
+        Counter deserializationDltCounter = Counter.builder("climbing.kafka.dlt.events")
+                .description("Number of Kafka records recovered to the Dead Letter Topic")
+                .tag("reason", "deserialization")
+                .register(meterRegistry);
 
         DeadLetterPublishingRecoverer recoverer =
                 new DeadLetterPublishingRecoverer(
@@ -135,6 +116,13 @@ public class KafkaErrorHandlingConfig {
                         record.partition(),
                         record.offset()
                 );
+
+                // Custom Micrometer metric
+                if (isDeserializationFailure(exception)) {
+                    deserializationDltCounter.increment();
+                } else {
+                    processingDltCounter.increment();
+                }
             }
 
             @Override
@@ -155,5 +143,47 @@ public class KafkaErrorHandlingConfig {
         });
 
         return errorHandler;
+    }
+
+
+    /**
+     * KafkaTemplate used to publish failed records to the DLT.
+     * It must support:
+     * byte[] -> deserialization failures
+     * CourseCreatedEvent -> listener / processing failures
+     */
+    @Bean
+    public KafkaTemplate<String, Object> deadLetterKafkaTemplate(KafkaProperties kafkaProperties) {
+
+        JacksonJsonSerializer<Object> jsonSerializer = new JacksonJsonSerializer<>();
+
+        // Do not expose Java class names in Kafka headers.
+        jsonSerializer.setAddTypeInfo(false);
+
+        Map<Class<?>, Serializer<?>> serializers = new LinkedHashMap<>();
+        serializers.put(byte[].class, new ByteArraySerializer());
+        serializers.put(CourseCreatedEvent.class, jsonSerializer);
+
+        DelegatingByTypeSerializer valueSerializer = new DelegatingByTypeSerializer(serializers);
+
+        DefaultKafkaProducerFactory<String, Object> producerFactory =
+                new DefaultKafkaProducerFactory<>(
+                        kafkaProperties.buildProducerProperties(),
+                        new StringSerializer(),
+                        valueSerializer
+                );
+
+        return new KafkaTemplate<>(producerFactory);
+    }
+
+    private boolean isDeserializationFailure(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof DeserializationException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

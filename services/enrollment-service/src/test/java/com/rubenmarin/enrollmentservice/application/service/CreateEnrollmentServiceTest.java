@@ -2,13 +2,16 @@ package com.rubenmarin.enrollmentservice.application.service;
 
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentCommand;
 import com.rubenmarin.enrollmentservice.application.port.out.CourseExistsPort;
+import com.rubenmarin.enrollmentservice.application.port.out.EnrollmentMetricsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.SaveEnrollmentPort;
 import com.rubenmarin.enrollmentservice.domain.model.Enrollment;
 import com.rubenmarin.enrollmentservice.domain.model.EnrollmentStatus;
 import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 //Pure unit test for CreateEnrollmentService using fake/mock ports.
 class CreateEnrollmentServiceTest {
 
@@ -23,10 +26,14 @@ class CreateEnrollmentServiceTest {
         // return exactly the Enrollment that the application asks us to save.
         SaveEnrollmentPort saveEnrollmentPort = enrollment -> enrollment;
 
+
+        RecordingEnrollmentMetricsPort enrollmentMetricsPort = new RecordingEnrollmentMetricsPort();
+
         CreateEnrollmentService createEnrollmentService =
                 new CreateEnrollmentService(
                         courseExistsPort,
-                        saveEnrollmentPort
+                        saveEnrollmentPort,
+                        enrollmentMetricsPort
                 );
 
         CreateEnrollmentCommand createEnrollmentCommand =
@@ -42,6 +49,10 @@ class CreateEnrollmentServiceTest {
         assertEquals(10L, createEnrollmentResult.getCourseId().value());
         assertEquals("Rubén", createEnrollmentResult.getStudentName().value());
         assertEquals(EnrollmentStatus.PENDING, createEnrollmentResult.getStatus());
+
+        assertEquals(1, enrollmentMetricsPort.attempted);
+        assertEquals(1, enrollmentMetricsPort.created);
+        assertEquals(0, enrollmentMetricsPort.validationFailed);
     }
 
     @Test
@@ -57,10 +68,13 @@ class CreateEnrollmentServiceTest {
                     return enrollment;
                 };
 
+        RecordingEnrollmentMetricsPort enrollmentMetricsPort = new RecordingEnrollmentMetricsPort() ;
+
         CreateEnrollmentService createEnrollmentService =
                 new CreateEnrollmentService(
                         courseExistsPort,
-                        saveEnrollmentPort
+                        saveEnrollmentPort,
+                        enrollmentMetricsPort
                 );
 
         CreateEnrollmentCommand createEnrollmentCommand =
@@ -83,5 +97,38 @@ class CreateEnrollmentServiceTest {
 
 
         assertEquals("Course not found: " + 999L, exception.getMessage());
+
+        assertEquals(1, enrollmentMetricsPort.attempted);
+        assertEquals(0, enrollmentMetricsPort.created);
+        assertEquals(1, enrollmentMetricsPort.validationFailed);
+    }
+
+    /**
+     * Hand-written fake outbound metrics adapter.
+     *
+     * Unlike a Mockito mock, this fake stores the calls
+     * so tests can inspect them directly.
+     */
+    private static class RecordingEnrollmentMetricsPort
+            implements EnrollmentMetricsPort {
+
+        int attempted;
+        int created;
+        int validationFailed;
+
+        @Override
+        public void enrollmentCreationAttempted() {
+            attempted++;
+        }
+
+        @Override
+        public void enrollmentCreated() {
+            created++;
+        }
+
+        @Override
+        public void courseValidationFailed() {
+            validationFailed++;
+        }
     }
 }

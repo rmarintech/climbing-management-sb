@@ -3,6 +3,7 @@ package com.rubenmarin.enrollmentservice.configuration;
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentUseCase;
 import com.rubenmarin.enrollmentservice.application.port.in.FindEnrollmentsUseCase;
 import com.rubenmarin.enrollmentservice.application.port.out.CourseExistsPort;
+import com.rubenmarin.enrollmentservice.application.port.out.EnrollmentMetricsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.FindEnrollmentsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.SaveEnrollmentPort;
 import com.rubenmarin.enrollmentservice.application.service.CreateEnrollmentService;
@@ -57,10 +58,11 @@ public class EnrollmentApplicationConfiguration {
     @Bean
     public CreateEnrollmentUseCase createEnrollmentUseCase(
             CourseExistsPort courseExistsPort,
-            SaveEnrollmentPort saveEnrollmentPort
+            SaveEnrollmentPort saveEnrollmentPort,
+            EnrollmentMetricsPort enrollmentMetricsPort
     ) {
 
-        return new CreateEnrollmentService(courseExistsPort, saveEnrollmentPort);
+        return new CreateEnrollmentService(courseExistsPort, saveEnrollmentPort,enrollmentMetricsPort);
     }
 
     @Bean

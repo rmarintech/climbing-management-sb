@@ -2,6 +2,7 @@ package com.rubenmarin.enrollmentservice.application.service;
 
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentCommand;
 import com.rubenmarin.enrollmentservice.application.port.out.CourseExistsPort;
+import com.rubenmarin.enrollmentservice.application.port.out.EnrollmentMetricsPort;
 import com.rubenmarin.enrollmentservice.application.port.out.SaveEnrollmentPort;
 import com.rubenmarin.enrollmentservice.domain.model.*;
 import com.rubenmarin.enrollmentservice.exception.CourseNotFoundException;
@@ -27,6 +28,9 @@ class CreateEnrollmentServiceMockitoTest {
 
     @Mock
     private SaveEnrollmentPort saveEnrollmentPort;
+
+    @Mock
+    private EnrollmentMetricsPort enrollmentMetricsPort;
 
     // Mockito creates CreateEnrollmentService
     // and injects those mock's into its constructor
@@ -64,7 +68,6 @@ class CreateEnrollmentServiceMockitoTest {
 
         // Verify
         Mockito.verify(courseExistsPort).existsById(new CourseId(10L));
-        Mockito.verify(saveEnrollmentPort).save(any(Enrollment.class));
 
         //Verify saved Object
         ArgumentCaptor<Enrollment> enrollmentCaptor = ArgumentCaptor.forClass(Enrollment.class);
@@ -74,6 +77,10 @@ class CreateEnrollmentServiceMockitoTest {
         Assertions.assertEquals(EnrollmentStatus.PENDING, savedEnrollment.getStatus());
         Assertions.assertEquals(new StudentName("Rubén"), savedEnrollment.getStudentName());
         Assertions.assertEquals(new CourseId(10L), savedEnrollment.getCourseId());
+
+        Mockito.verify(enrollmentMetricsPort).enrollmentCreationAttempted();
+        Mockito.verify(enrollmentMetricsPort).enrollmentCreated();
+        Mockito.verify(enrollmentMetricsPort, Mockito.never()).courseValidationFailed();
 
     }
 
@@ -101,5 +108,34 @@ class CreateEnrollmentServiceMockitoTest {
         // Course validation fails -> exception thrown -> persistence is NOT called
         Mockito.verify(saveEnrollmentPort, Mockito.never()).save(any(Enrollment.class));
 
+
+        Mockito.verify(enrollmentMetricsPort).enrollmentCreationAttempted();
+        Mockito.verify(enrollmentMetricsPort).courseValidationFailed();
+        Mockito.verify(enrollmentMetricsPort, Mockito.never()).enrollmentCreated();
+    }
+
+    @Test
+    void shouldNotRecordEnrollmentAsCreatedWhenPersistenceFails() {
+
+        CreateEnrollmentCommand command =
+                new CreateEnrollmentCommand(
+                        10L,
+                        "Rubén"
+                );
+
+        Mockito.when(courseExistsPort.existsById(new CourseId(10L))).thenReturn(true);
+
+        Mockito.when(
+                saveEnrollmentPort.save(any(Enrollment.class))
+        ).thenThrow(new RuntimeException("MongoDB unavailable"));
+
+        Assertions.assertThrows(
+                RuntimeException.class,
+                () -> createEnrollmentService.createEnrollment(command)
+        );
+
+        Mockito.verify(enrollmentMetricsPort).enrollmentCreationAttempted();
+        Mockito.verify(enrollmentMetricsPort, Mockito.never()).courseValidationFailed();
+        Mockito.verify(enrollmentMetricsPort, Mockito.never()).enrollmentCreated();
     }
 }
