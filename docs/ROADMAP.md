@@ -487,11 +487,24 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Spring Kafka listener failure-rate metric
   - [x] Simulated listener failure observed through Micrometer
   - [x] Retry / DLT path correlated with listener failure metrics
-- [ ] Custom Micrometer / business metrics — 🚧 CURRENT
-  - [ ] DLT event counter
-  - [ ] Enrollment-created counter
-  - [ ] Course-validation failure counter
-  - [ ] Duplicate Kafka event skip counter
+- [x] Custom Micrometer / business metrics
+  - [x] Custom Micrometer Counter fundamentals
+  - [x] DLT event counter
+  - [x] Low-cardinality `reason` tag
+  - [x] DLT `reason="processing"`
+  - [x] DLT `reason="deserialization"`
+  - [x] Duplicate Kafka event skip counter
+  - [x] Enrollment metrics outbound port
+  - [x] Micrometer metrics adapter preserving Hexagonal Architecture
+  - [x] Enrollment creation-attempt counter
+  - [x] Successful enrollment-created counter
+  - [x] Course-validation failure counter
+  - [x] Enrollment creation success ratio
+  - [x] Prometheus `increase(...)` for recent business events
+  - [x] Grafana custom technical-metrics panels
+  - [x] Grafana business-metrics row
+  - [x] Metric-name normalization verified in Prometheus exposition
+  - [x] Test doubles adapted for the expanded metrics port
 - [ ] Structured logging
 - [ ] Centralized logs / Loki
 - [ ] Trace-log correlation
@@ -500,7 +513,7 @@ Current testing documentation: [TESTING.md](TESTING.md).
 
 ## Remaining Advanced Backend Engineering
 
-- [ ] Distributed tracing
+- [ ] Distributed tracing — 🚧 CURRENT
 - [ ] API versioning
 - [ ] Performance
 - [ ] Scalability
@@ -682,9 +695,11 @@ JVM saturation / GC metrics     ✅
         ↓
 Kafka messaging observability   ✅
         ↓
-Custom Micrometer metrics       🚧 CURRENT
+Custom Micrometer metrics       ✅
         ↓
-Distributed tracing             ⏳
+Business metrics / success rate ✅
+        ↓
+Distributed tracing             🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓

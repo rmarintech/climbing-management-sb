@@ -246,9 +246,11 @@ JVM saturation / GC metrics     ✅
         ↓
 Kafka messaging observability   ✅
         ↓
-Custom Micrometer metrics       🚧 CURRENT
+Custom Micrometer metrics       ✅
         ↓
-Distributed tracing             ⏳
+Business metrics / success rate ✅
+        ↓
+Distributed tracing             🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
@@ -257,7 +259,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, Prometheus scrapes and stores the time series, and Grafana now visualizes HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag by partition, total Kafka lag, assigned partitions, consumer throughput, listener processing time and listener failure rate. A deliberate Kafka listener failure was also used to verify that retry / DLT behavior is visible through the listener metrics. The next observability milestone is **custom Micrometer / business metrics**, starting with a dedicated DLT event counter.
+The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, Prometheus scrapes and stores the time series, and Grafana now visualizes HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag and throughput, listener processing/failures, custom DLT and duplicate-event metrics, and business metrics for Enrollment creation. Custom Micrometer instrumentation now records DLT recoveries by controlled reason, duplicate Kafka events skipped, Enrollment creation attempts, successful Enrollment creation and Course-validation failures. The next observability milestone is **distributed tracing**.
 
 ---
 
@@ -970,7 +972,7 @@ histogram buckets
 p50 / p90 / p95 / p99 latency
 ```
 
-The Grafana dashboard currently contains three main areas:
+The Grafana dashboard currently contains four main areas:
 
 ```text
 Enrollment Service — HTTP Overview
@@ -992,7 +994,14 @@ Enrollment Service — Dependencies / Messaging
 ├── Kafka Assigned Partitions
 ├── Kafka Consumer Throughput
 ├── Kafka Listener Processing Time
-└── Kafka Listener Failure Rate
+├── Kafka Listener Failure Rate
+├── Kafka DLT Events
+└── Kafka Duplicate Events Skipped
+
+Enrollment Service — Business Metrics
+├── Enrollments Created
+├── Course Validation Failures
+└── Enrollment Creation Success Rate
 ```
 
 The heap panel demonstrates the expected JVM sawtooth pattern:
@@ -1009,9 +1018,11 @@ memory reclaimed
 used heap drops
 ```
 
-The Kafka panels now show both backlog and processing behavior. In the healthy local steady state, both partitions and total consumer lag were `0`, while generated Course events produced visible consumer-throughput spikes. Spring Kafka listener timers expose processing duration and `result` / `exception` labels. A deliberate `Kafka Retry Test` processing failure was used to verify the failure series, retries and the DLT path through the observability stack.
+The Kafka panels now show backlog, ownership, throughput, listener execution and application-specific failure handling. A deliberate processing failure and a malformed Kafka payload verified the tagged DLT counter with `reason="processing"` and `reason="deserialization"`. Replaying the same `eventId` verified the duplicate-event counter.
 
-The next observability milestone is **custom Micrometer / business metrics**. Generic framework metrics can show listener failures, throughput and lag, but application-specific questions such as “how many records were sent to the DLT?” need explicit instrumentation. After custom metrics, the remaining work continues with distributed tracing, structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
+Business instrumentation is kept outside the framework-free application layer through `EnrollmentMetricsPort` and a Micrometer outbound adapter. The application records creation attempts, successful persisted Enrollments and missing-Course validation failures. Grafana derives a recent Enrollment creation success rate from the success and attempt counters. A longer local query window is used for the ratio because the tiny learning workload makes short sliding windows volatile.
+
+The custom Micrometer / business-metrics milestone is complete. The next observability milestone is **distributed tracing**, followed later by structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
 
 Detailed theory, configuration and PromQL examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
 

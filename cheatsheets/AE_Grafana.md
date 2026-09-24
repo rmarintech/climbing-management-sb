@@ -733,22 +733,245 @@ Kafka Consumer Throughput → Records/sec
 Kafka Listener Processing Time → Avg Listener Time
 Kafka Listener Failure Rate → Listener Failure %
 
-30. NEXT — CUSTOM MICROMETER METRICS
+30. CUSTOM MICROMETER METRICS
+    ================================
+
+Current custom technical metrics:
+climbing_kafka_dlt_events_total
+climbing_kafka_duplicate_events_total
+
+Current business metrics:
+climbing_enrollment_creation_attempts_total
+climbing_enrollments_total
+climbing_enrollment_course_validation_failures_total
+
+31. KAFKA DLT EVENTS — LAST 5M
+    ===============================
+
+Title: Kafka DLT Events — Last 5m
+Visualization: Time series or Bar chart
+
+PromQL:
+sum by (reason) (
+increase(
+climbing_kafka_dlt_events_total{
+job="enrollment-service"
+}[5m]
+)
+)
+
+Legend: {{reason}}
+Unit: short
+Decimals: 0
+Min: 0
+
+Controlled reasons:
+processing
+deserialization
+
+IMPORTANT:
+recoveryFailed() does NOT increment this metric.
+
+32. KAFKA DUPLICATE EVENTS SKIPPED — LAST 5M
+    =============================================
+
+Title: Kafka Duplicate Events Skipped — Last 5m
+Visualization: Stat
+
+PromQL:
+increase(
+climbing_kafka_duplicate_events_total{
+job="enrollment-service"
+}[5m]
+)
+
+Legend: Duplicates Skipped
+Unit: short
+Decimals: 0
+Min: 0
+
+33. BUSINESS METRICS ROW
+    ========================
+
+Row name:
+Enrollment Service — Business Metrics
+
+Panels:
+├── Enrollments Created — Last 5m
+├── Course Validation Failures — Last 5m
+└── Enrollment Creation Success Rate — Last 15m
+
+34. ENROLLMENTS CREATED — LAST 5M
+    =================================
+
+Title: Enrollments Created — Last 5m
+Visualization: Stat
+
+PromQL:
+increase(
+climbing_enrollments_total{
+job="enrollment-service"
+}[5m]
+)
+
+Legend: Enrollments Created
+Unit: short
+Decimals: 0
+Min: 0
+
+35. COURSE VALIDATION FAILURES — LAST 5M
+    ========================================
+
+Title: Course Validation Failures — Last 5m
+Visualization: Stat
+
+PromQL:
+increase(
+climbing_enrollment_course_validation_failures_total{
+job="enrollment-service"
+}[5m]
+)
+
+Legend: Validation Failures
+Unit: short
+Decimals: 0
+Min: 0
+
+36. ENROLLMENT CREATION SUCCESS RATE
     ====================================
 
-Framework metrics now cover:
-HTTP
-JVM
-MongoDB
-Kafka client
-Spring Kafka listener
+Title: Enrollment Creation Success Rate — Last 15m
+Visualization: Stat
+
+PromQL:
+(
+100 *
+increase(
+climbing_enrollments_total{
+job="enrollment-service"
+}[15m]
+)
+/
+increase(
+climbing_enrollment_creation_attempts_total{
+job="enrollment-service"
+}[15m]
+)
+)
+and on()
+(
+increase(
+climbing_enrollment_creation_attempts_total{
+job="enrollment-service"
+}[15m]
+) > 0
+)
+
+Legend: Success Rate
+Unit: Percent (0-100)
+Decimals: 1
+Min: 0
+Max: 100
+
+No attempts → No data
+Attempts but no success → 0%
+
+The 15-minute window is intentionally less volatile for the small local workload.
+
+37. CUSTOM METRIC NAME MAPPING
+    ==============================
+
+Micrometer: climbing.kafka.dlt.events
+Prometheus: climbing_kafka_dlt_events_total
+
+Micrometer: climbing.kafka.duplicate.events
+Prometheus: climbing_kafka_duplicate_events_total
+
+Micrometer: climbing.enrollment.creation.attempts
+Prometheus: climbing_enrollment_creation_attempts_total
+
+Micrometer: climbing.enrollments
+Prometheus: climbing_enrollments_total
+
+Micrometer: climbing.enrollment.course.validation.failures
+Prometheus: climbing_enrollment_course_validation_failures_total
+
+38. CURRENT DASHBOARD STRUCTURE
+    ===============================
+
+Enrollment Service — HTTP Overview
+├── Enrollment Traffic
+├── Enrollment 5xx Error Rate
+├── Enrollment GET p50 Latency
+├── Enrollment GET p95 Latency
+└── Enrollment GET p99 Latency
+
+Enrollment Service — Runtime / Saturation
+├── Enrollment JVM CPU
+├── Enrollment JVM Heap Memory
+├── Enrollment JVM Heap Utilization
+└── Enrollment JVM GC Pause
+
+Enrollment Service — Dependencies / Messaging
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+├── Kafka Listener Failure Rate
+├── Kafka DLT Events — Last 5m
+└── Kafka Duplicate Events Skipped — Last 5m
+
+Enrollment Service — Business Metrics
+├── Enrollments Created — Last 5m
+├── Course Validation Failures — Last 5m
+└── Enrollment Creation Success Rate — Last 15m
+
+39. PANEL LEGENDS
+    =================
+
+Enrollment Traffic → Requests/sec
+Enrollment 5xx Error Rate → 5xx %
+Enrollment GET p50 Latency → p50
+Enrollment GET p95 Latency → p95
+Enrollment GET p99 Latency → p99
+Enrollment JVM CPU → CPU
+Enrollment JVM Heap Memory A → Used Heap
+Enrollment JVM Heap Memory B → Committed Heap
+Enrollment JVM Heap Utilization → Heap Utilization
+Enrollment JVM GC Pause → Avg GC Pause
+Kafka Lag by Partition → {{topic}} / partition {{partition}}
+Kafka Total Consumer Lag → Total Lag
+Kafka Assigned Partitions → Assigned Partitions
+Kafka Consumer Throughput → Records/sec
+Kafka Listener Processing Time → Avg Listener Time
+Kafka Listener Failure Rate → Listener Failure %
+Kafka DLT Events → {{reason}}
+Kafka Duplicate Events Skipped → Duplicates Skipped
+Enrollments Created → Enrollments Created
+Course Validation Failures → Validation Failures
+Enrollment Creation Success Rate → Success Rate
+
+40. NEXT — DISTRIBUTED TRACING
+    ==============================
+
+Custom Micrometer / business metrics are complete.
 
 Next:
-Custom application / business metrics
+Distributed tracing
 
-First planned metric:
-Dedicated DLT event counter
+Planned flow:
+request enters Enrollment
+→ Enrollment span
+→ REST call to Course Service
+→ Course span
+→ same traceId
 
-Reason:
-Generic listener metrics can show failures, but they do not directly answer:
-"How many records were sent to course-events-dlt?"
+Topics:
+trace / span fundamentals
+Micrometer Tracing
+OpenTelemetry
+HTTP trace propagation
+Enrollment → Course distributed trace
+later Kafka propagation
+later trace-log correlation

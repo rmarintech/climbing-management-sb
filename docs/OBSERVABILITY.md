@@ -1647,7 +1647,8 @@ After the experiment, the artificial failure condition should be disabled again.
 
 # 36. Automatic Metrics vs Custom Application Metrics
 
-Most metrics used so far are automatically provided by frameworks:
+Most metrics introduced earlier are automatically provided by frameworks:
+
 ```text
 HTTP metrics
 JVM / process metrics
@@ -1656,29 +1657,485 @@ Kafka client metrics
 Spring Kafka listener metrics
 ```
 
-They do not answer every application-specific question. Examples:
+They answer many technical questions, but not every application-specific question. Examples:
+
 ```text
 How many records were sent to the DLT?
-How many enrollments were created?
-How many Course validations failed?
+Why were they sent there?
 How many duplicate Kafka events were skipped?
+How many Enrollment creation attempts occurred?
+How many Enrollments were actually persisted?
+How many requests failed because the Course did not exist?
 ```
 
-This introduces the next milestone:
+Those questions require explicit instrumentation.
+
+---
+
+# 37. Custom Counter Fundamentals
+
+The first custom metrics use Micrometer `Counter`.
+
+A counter represents a monotonically increasing event count during the lifetime of the current JVM:
+
 ```text
-Custom Micrometer metrics
+0 → 1 → 2 → 3 → ...
 ```
 
-A planned first custom counter is a dedicated DLT-event metric, for example:
+Counters are useful for discrete events such as DLT recoveries, duplicates skipped, creation attempts, successful creations and validation failures.
+
+A JVM restart resets the in-memory counter, while Prometheus retains previously scraped historical samples according to its own retention.
+
+For recent activity, query the counter with:
+
+```promql
+increase(counter[5m])
+```
+
+or:
+
+```promql
+rate(counter[5m])
+```
+
+For rare discrete business events, `increase(...)` is usually easier to read in a dashboard. Because Prometheus extrapolates to the exact boundaries of the selected range, `increase(...)` can return a fractional estimate such as `2.03` even though the application counter increments in whole events.
+
+---
+
+# 38. Custom DLT Counter
+
+Micrometer metric:
+
 ```text
 climbing.kafka.dlt.events
 ```
 
-The exact custom metric is not implemented yet.
+Prometheus exposition:
+
+```text
+climbing_kafka_dlt_events_total
+```
+
+The counter is incremented only after successful DLT recovery:
+
+```text
+listener failure
+    ↓
+retries exhausted or fatal failure
+    ↓
+DeadLetterPublishingRecoverer succeeds
+    ↓
+RetryListener.recovered(...)
+    ↓
+DLT counter +1
+```
+
+It is intentionally not incremented from `RetryListener.recoveryFailed(...)`, because a failed DLT publication is not a successfully recovered DLT event.
 
 ---
 
-# 37. Local Observability Architecture
+# 39. Low-Cardinality DLT Reason Tag
+
+The DLT metric has a controlled `reason` tag:
+
+```text
+reason="processing"
+reason="deserialization"
+```
+
+Prometheus exposes separate time series:
+
+```promql
+climbing_kafka_dlt_events_total{reason="processing"}
+climbing_kafka_dlt_events_total{reason="deserialization"}
+```
+
+The classifier walks the exception cause chain to identify a `DeserializationException`.
+
+Two runtime experiments verified both branches:
+
+```text
+Kafka Retry Test
+→ listener-processing failure
+→ reason="processing"
+
+malformed payload injected directly into course-events
+→ ErrorHandlingDeserializer / DeserializationException
+→ reason="deserialization"
+```
+
+Low-cardinality categories are preferred over tags such as `eventId`, offset, student name or raw exception messages.
+
+Recent DLT events by reason:
+
+```promql
+sum by (reason) (
+  increase(
+    climbing_kafka_dlt_events_total{
+      job="enrollment-service"
+    }[5m]
+  )
+)
+```
+
+---
+
+# 40. Duplicate Kafka Event Counter
+
+The idempotency flow already stores processed event IDs in MongoDB. A custom counter records the branch where a duplicate is detected and skipped.
+
+Micrometer:
+
+```text
+climbing.kafka.duplicate.events
+```
+
+Prometheus:
+
+```text
+climbing_kafka_duplicate_events_total
+```
+
+The metric increments only when:
+
+```text
+repository.existsById(eventId) == true
+        ↓
+duplicate processing is skipped
+        ↓
+counter +1
+```
+
+The counter is registered once when `ProcessedKafkaEventService` is constructed.
+
+The runtime test published the same valid Kafka event twice with the same `eventId`:
+
+```text
+first delivery
+→ processed normally
+→ eventId stored
+
+second delivery
+→ duplicate detected
+→ skipped
+→ duplicate counter +1
+```
+
+Recent duplicates:
+
+```promql
+increase(
+  climbing_kafka_duplicate_events_total{
+    job="enrollment-service"
+  }[5m]
+)
+```
+
+The MongoDB `_id` uniqueness constraint remains the final concurrency safety net because a pre-check such as `existsById(...)` alone cannot eliminate every check-then-insert race.
+
+---
+
+# 41. Business Metrics and Hexagonal Architecture
+
+Business instrumentation must not make the framework-free application service depend directly on Micrometer.
+
+The application therefore defines an outbound port:
+
+```text
+EnrollmentMetricsPort
+```
+
+Architecture:
+
+```text
+CreateEnrollmentService
+        ↓
+EnrollmentMetricsPort
+        ↑
+MicrometerEnrollmentMetricsAdapter
+        ↓
+Micrometer Counter / MeterRegistry
+```
+
+The application layer knows only its own port; the technical adapter owns the Micrometer dependency.
+
+The metrics port currently records:
+
+```text
+enrollmentCreationAttempted()
+enrollmentCreated()
+courseValidationFailed()
+```
+
+Business flow:
+
+```text
+createEnrollment() entered
+        ↓
+creation attempt +1
+        ↓
+Course exists?
+   │
+   ├── NO
+   │    ↓
+   │ course validation failure +1
+   │    ↓
+   │ 404
+   │
+   └── YES
+        ↓
+      persist Enrollment
+        │
+        ├── persistence fails
+        │    ↓
+        │ created counter unchanged
+        │
+        └── persistence succeeds
+             ↓
+          created +1
+```
+
+This placement keeps the metric semantics precise.
+
+---
+
+# 42. Enrollment Business Counters
+
+## Creation attempts
+
+Micrometer:
+
+```text
+climbing.enrollment.creation.attempts
+```
+
+Prometheus:
+
+```text
+climbing_enrollment_creation_attempts_total
+```
+
+It increments when the creation use case is entered.
+
+## Successful Enrollment creation
+
+Final Micrometer name:
+
+```text
+climbing.enrollments
+```
+
+Prometheus:
+
+```text
+climbing_enrollments_total
+```
+
+It increments only after successful persistence.
+
+During the exercise, the earlier Micrometer name `climbing.enrollments.created` was observed as `climbing_enrollments_total` in the Prometheus exposition. Using `climbing.enrollments` makes the Micrometer-to-Prometheus mapping easier to understand.
+
+## Course-validation failures
+
+Micrometer:
+
+```text
+climbing.enrollment.course.validation.failures
+```
+
+Prometheus:
+
+```text
+climbing_enrollment_course_validation_failures_total
+```
+
+This metric increments only when Course validation says the referenced Course does not exist. It does not represent Course Service unavailability, MongoDB failures, or HTTP validation rejected before the use case.
+
+---
+
+# 43. Grafana Business Metrics
+
+A fourth dashboard row is now used:
+
+```text
+Enrollment Service — Business Metrics
+```
+
+Panels:
+
+```text
+├── Enrollments Created — Last 5m
+├── Course Validation Failures — Last 5m
+└── Enrollment Creation Success Rate — Last 15m
+```
+
+## Enrollments Created — Last 5m
+
+```promql
+increase(
+  climbing_enrollments_total{
+    job="enrollment-service"
+  }[5m]
+)
+```
+
+Recommended display: `Stat`, unit `short`, decimals `0`, min `0`.
+
+## Course Validation Failures — Last 5m
+
+```promql
+increase(
+  climbing_enrollment_course_validation_failures_total{
+    job="enrollment-service"
+  }[5m]
+)
+```
+
+Recommended display: `Stat`, unit `short`, decimals `0`, min `0`.
+
+## Enrollment Creation Success Rate — Last 15m
+
+The denominator is a real creation-attempt counter rather than the sum of only known success/failure categories.
+
+```promql
+(
+  100 *
+  increase(
+    climbing_enrollments_total{
+      job="enrollment-service"
+    }[15m]
+  )
+  /
+  increase(
+    climbing_enrollment_creation_attempts_total{
+      job="enrollment-service"
+    }[15m]
+  )
+)
+and on()
+(
+  increase(
+    climbing_enrollment_creation_attempts_total{
+      job="enrollment-service"
+    }[15m]
+  ) > 0
+)
+```
+
+Meaning:
+
+```text
+successfully persisted Enrollments
+---------------------------------- × 100
+creation use-case attempts
+```
+
+The `and on()` condition preserves the distinction:
+
+```text
+no attempts
+→ No data
+
+attempts occurred but none succeeded
+→ 0%
+```
+
+This ratio only covers requests that reach `CreateEnrollmentService`; HTTP/Bean Validation failures rejected before the use case are outside this definition.
+
+---
+
+# 44. Sliding Windows and Low-Traffic Volatility
+
+A moving range such as `increase(metric[5m])` continuously changes its dataset:
+
+```text
+time ───────────────────────────────►
+
+      |--------- last 5 min --------|
+      ↑                             ↑
+ old observations leave        new observations enter
+```
+
+Therefore a success percentage can temporarily decrease while new successful requests are being created if older successful observations leave the selected window.
+
+There is also a small timing gap between `attempt +1` and `successful persistence → created +1`; a Prometheus scrape can occur between those two events.
+
+With very low local traffic, the 15-minute ratio window is easier to interpret than a five-minute window.
+
+---
+
+# 45. Testing Metrics Without Breaking the Architecture
+
+Adding multiple methods to `EnrollmentMetricsPort` means it is no longer a functional interface, so the old one-line lambda fake is no longer valid.
+
+Hand-written tests use a small recording fake with counters for:
+
+```text
+attempted
+created
+validationFailed
+```
+
+Mockito tests use:
+
+```java
+@Mock
+private EnrollmentMetricsPort enrollmentMetricsPort;
+```
+
+and can verify semantic interactions:
+
+```text
+successful creation
+→ attempted called
+→ created called
+→ validationFailed never
+
+missing Course
+→ attempted called
+→ validationFailed called
+→ created never
+```
+
+This keeps application tests independent from Micrometer while still verifying the points where metrics are emitted.
+
+---
+
+# 46. Current Grafana Dashboard Structure
+
+```text
+Enrollment Service — HTTP Overview
+├── Enrollment Traffic
+├── Enrollment 5xx Error Rate
+├── Enrollment GET p50 Latency
+├── Enrollment GET p95 Latency
+└── Enrollment GET p99 Latency
+
+Enrollment Service — Runtime / Saturation
+├── Enrollment JVM CPU
+├── Enrollment JVM Heap Memory
+├── Enrollment JVM Heap Utilization
+└── Enrollment JVM GC Pause
+
+Enrollment Service — Dependencies / Messaging
+├── Kafka Lag by Partition
+├── Kafka Total Consumer Lag
+├── Kafka Assigned Partitions
+├── Kafka Consumer Throughput
+├── Kafka Listener Processing Time
+├── Kafka Listener Failure Rate
+├── Kafka DLT Events
+└── Kafka Duplicate Events Skipped
+
+Enrollment Service — Business Metrics
+├── Enrollments Created
+├── Course Validation Failures
+└── Enrollment Creation Success Rate
+```
+
+---
+
+# 47. Local Observability Architecture
 
 Current learning setup:
 
@@ -1713,7 +2170,7 @@ A later project step can integrate them into Docker Compose, where service-to-se
 
 ---
 
-# 38. Current Mental Model
+# 48. Current Mental Model
 
 ```text
 Application behavior
@@ -1736,14 +2193,28 @@ operational understanding
 Current observability coverage:
 
 ```text
-Traffic      → HTTP request rate
-Errors       → HTTP 5xx + Kafka listener failures
-Latency      → HTTP average + p50/p95/p99 + Kafka listener time
-Saturation   → CPU + heap + GC
-Messaging    → lag + partitions + throughput + listener behavior
+Traffic        → HTTP request rate
+Errors         → HTTP 5xx + Kafka listener failures
+Latency        → HTTP p50/p95/p99 + Kafka listener time
+Saturation     → CPU + heap + GC
+Messaging      → Kafka lag + partitions + throughput + DLT + duplicates
+Business       → attempts + creations + validation failures + success rate
 ```
 
-The next active step is custom Micrometer / business metrics, beginning with a dedicated DLT-event counter. The broader stages after that are distributed tracing, structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
+The **custom Micrometer / business-metrics milestone is complete**.
+
+The next active observability topic is:
+
+```text
+Distributed tracing
+→ trace / span fundamentals
+→ Micrometer Tracing
+→ OpenTelemetry
+→ Enrollment → Course trace propagation
+→ later Kafka trace propagation and trace-log correlation
+```
+
+After tracing, the remaining observability work continues with structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
 
 ---
 
