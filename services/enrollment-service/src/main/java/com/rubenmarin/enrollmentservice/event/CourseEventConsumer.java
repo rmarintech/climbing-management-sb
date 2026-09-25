@@ -24,30 +24,28 @@ public class CourseEventConsumer {
         CourseCreatedEvent event = record.value();
 
         if (processedKafkaEventService.wasAlreadyProcessed(event.eventId())) {
-            log.warn(
-                    "Duplicate Kafka event skipped. eventId={}, eventType={}, courseId={}, partition={}, offset={}",
-                    event.eventId(),
-                    event.eventType(),
-                    event.courseId(),
-                    record.partition(),
-                    record.offset()
-            );
+
+            log.atWarn()
+                    .addKeyValue("eventId", event.eventId())
+                    .addKeyValue("eventType", event.eventType())
+                    .addKeyValue("courseId", event.courseId())
+                    .addKeyValue("partition", record.partition())
+                    .addKeyValue("offset", record.offset())
+                    .log("Duplicate Kafka event skipped");
             return;
         }
 
-
-        log.info(
-                "CourseCreatedEvent consumed. key={}, eventType={}, eventVersion={}, sourceService={}, courseId={}, partition={}, offset={}, name={}, difficulty={}",
-                record.key(),
-                event.eventType(),
-                event.eventVersion(),
-                event.sourceService(),
-                event.courseId(),
-                record.partition(),
-                record.offset(),
-                event.name(),
-                event.difficulty()
-        );
+        log.atInfo()
+                .addKeyValue("key", record.key())
+                .addKeyValue("eventType", event.eventType())
+                .addKeyValue("eventVersion", event.eventVersion())
+                .addKeyValue("sourceService", event.sourceService())
+                .addKeyValue("courseId", event.courseId())
+                .addKeyValue("partition", record.partition())
+                .addKeyValue("offset", record.offset())
+                .addKeyValue("courseName", event.name())
+                .addKeyValue("difficulty", event.difficulty())
+                .log("CourseCreatedEvent received");
 
         // Learning experiment:
         //
@@ -64,12 +62,11 @@ public class CourseEventConsumer {
         //
         // Keep disabled during normal execution.
         if (false && "Kafka Retry Test".equals(event.name())) {
-            log.error(
-                    "Simulated processing failure. courseId={}, partition={}, offset={}",
-                    event.courseId(),
-                    record.partition(),
-                    record.offset()
-            );
+            log.atError()
+                    .addKeyValue("courseId", event.courseId())
+                    .addKeyValue("partition", record.partition())
+                    .addKeyValue("offset", record.offset())
+                    .log("Simulated processing failure");
 
             throw new RuntimeException("Simulated Kafka processing failure");
         }
@@ -77,6 +74,13 @@ public class CourseEventConsumer {
         // Process the event here.
 
         processedKafkaEventService.markAsProcessed(event);
+
+        log.atInfo()
+                .addKeyValue("eventId", event.eventId())
+                .addKeyValue("courseId", event.courseId())
+                .addKeyValue("partition", record.partition())
+                .addKeyValue("offset", record.offset())
+                .log("CourseCreatedEvent processed");
     }
 }
 

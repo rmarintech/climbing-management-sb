@@ -1,0 +1,36 @@
+loki.source.file "enrollment_service" {
+  targets = [
+    {
+      __path__ = "/var/log/climbing/enrollment-service.log",
+      job      = "enrollment-service",
+      service  = "enrollment-service",
+    },
+  ]
+
+  forward_to = [loki.process.enrollment_service.receiver]
+}
+
+loki.process "enrollment_service" {
+
+  stage.json {
+    expressions = {
+      timestamp = "\"@timestamp\"",
+      trace_id  = "traceId",
+      span_id   = "spanId",
+    }
+  }
+
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339"
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id = "",
+      span_id  = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
