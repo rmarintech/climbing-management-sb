@@ -2144,11 +2144,14 @@ Windows host
 │
 ├── Course Service
 │      localhost:8080
+│      │
+│      └── OTLP traces → localhost:4318
 │
 ├── Enrollment Service
 │      localhost:8081
 │      │
-│      └── /actuator/prometheus
+│      ├── /actuator/prometheus
+│      └── OTLP traces → localhost:4318
 │
 └── Docker
        │
@@ -2157,16 +2160,21 @@ Windows host
        │      │
        │      └── scrapes host.docker.internal:8081
        │
+       ├── Tempo
+       │      localhost:3200   query API
+       │      localhost:4317   OTLP gRPC
+       │      localhost:4318   OTLP HTTP
+       │
        └── Grafana
               localhost:3000
               │
-              └── queries Prometheus through
-                  host.docker.internal:9090
+              ├── Prometheus → host.docker.internal:9090
+              └── Tempo      → host.docker.internal:3200
 ```
 
-Prometheus and Grafana were intentionally introduced as standalone containers first so the scrape/query relationships are visible while learning.
+Prometheus, Tempo and Grafana were intentionally introduced as standalone containers first so the scrape, export and query relationships are visible while learning.
 
-A later project step can integrate them into Docker Compose, where service-to-service names would replace `host.docker.internal`.
+A later project step can integrate them into Docker Compose, where service-to-service names would replace `host.docker.internal` where appropriate.
 
 ---
 
@@ -2174,20 +2182,32 @@ A later project step can integrate them into Docker Compose, where service-to-se
 
 ```text
 Application behavior
-        ↓
-Micrometer instrumentation
-        ↓
-Actuator / Prometheus exposition
-        ↓
-Prometheus scrape
-        ↓
-time-series storage
-        ↓
-PromQL
-        ↓
-Grafana panels
-        ↓
-operational understanding
+        │
+        ├── metrics
+        │     ↓
+        │  Micrometer / Actuator
+        │     ↓
+        │  Prometheus
+        │     ↓
+        │  PromQL
+        │     ↓
+        │  Grafana dashboards
+        │
+        ├── traces
+        │     ↓
+        │  Micrometer Tracing / Observation
+        │     ↓
+        │  OpenTelemetry
+        │     ↓
+        │  OTLP
+        │     ↓
+        │  Tempo
+        │     ↓
+        │  Grafana Explore
+        │
+        └── logs
+              ↓
+           traceId / spanId correlation
 ```
 
 Current observability coverage:
@@ -2199,22 +2219,419 @@ Latency        → HTTP p50/p95/p99 + Kafka listener time
 Saturation     → CPU + heap + GC
 Messaging      → Kafka lag + partitions + throughput + DLT + duplicates
 Business       → attempts + creations + validation failures + success rate
+Tracing        → HTTP + Kafka distributed traces
+Correlation    → traceId / spanId in application logs
 ```
 
 The **custom Micrometer / business-metrics milestone is complete**.
 
+The **distributed tracing milestone is also complete** for the current course scope.
+
 The next active observability topic is:
 
 ```text
-Distributed tracing
-→ trace / span fundamentals
-→ Micrometer Tracing
-→ OpenTelemetry
-→ Enrollment → Course trace propagation
-→ later Kafka trace propagation and trace-log correlation
+Structured logging
+    ↓
+Centralized logs / Loki
+    ↓
+SLIs / SLOs
+    ↓
+Alerting
 ```
 
-After tracing, the remaining observability work continues with structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
+---
+
+# 49. Distributed Tracing Fundamentals
+
+Metrics answer aggregate questions, but they do not show how one individual operation moved through a distributed system.
+
+A trace represents an end-to-end operation:
+
+```text
+Trace
+└── Span
+    ├── child span
+    └── child span
+```
+
+Each trace has a `traceId` shared by all spans that belong to the same distributed operation. Each individual span has its own `spanId`, and a child span also carries the identity of its parent.
+
+```text
+Trace ID = ABC123
+
+Enrollment HTTP SERVER span
+├── Security span
+└── Course HTTP CLIENT span
+    └── Course HTTP SERVER span
+```
+
+All spans use the same `traceId`, while every span has a different `spanId`.
+
+---
+
+# 50. Micrometer Tracing, OpenTelemetry and Tempo
+
+The services use Spring Boot's OpenTelemetry starter:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-opentelemetry</artifactId>
+</dependency>
+```
+
+Current local tracing configuration:
+
+```properties
+management.tracing.sampling.probability=1.0
+management.opentelemetry.tracing.export.otlp.endpoint=http://localhost:4318/v1/traces
+management.opentelemetry.tracing.export.otlp.transport=http
+management.otlp.metrics.export.enabled=false
+```
+
+The local architecture intentionally separates metrics and traces:
+
+```text
+Metrics
+Application
+    ↓
+Micrometer
+    ↓
+/actuator/prometheus
+    ↓
+Prometheus
+    ↓
+Grafana
+
+Traces
+Application
+    ↓
+Micrometer Tracing / Observation
+    ↓
+OpenTelemetry
+    ↓
+OTLP HTTP
+    ↓
+Tempo
+    ↓
+Grafana
+```
+
+`management.otlp.metrics.export.enabled=false` is important in this setup because Prometheus is the metrics backend while Tempo receives traces only. Without it, the OpenTelemetry starter may also try to export metrics to `http://localhost:4318/v1/metrics`, which is not the metrics path used by this Tempo setup.
+
+---
+
+# 51. Tempo Local Setup
+
+Tempo currently runs as:
+
+```text
+grafana/tempo:3.0.3
+```
+
+Relevant ports:
+
+```text
+3200 → Tempo HTTP query API
+4317 → OTLP gRPC ingestion
+4318 → OTLP HTTP ingestion
+```
+
+The project configuration is:
+
+```text
+observability/tempo/tempo.yaml
+```
+
+The local Tempo storage backend uses a Docker volume. Because the Tempo image runs as non-root UID `10001`, the learning setup explicitly gives that UID ownership of the volume before starting Tempo.
+
+Readiness check:
+
+```powershell
+curl.exe http://localhost:3200/ready
+```
+
+Expected:
+
+```text
+ready
+```
+
+The command-oriented setup and TraceQL examples are also captured in `cheatsheets/AE_Tempo.md`.
+
+---
+
+# 52. Grafana Tempo Data Source
+
+Grafana runs in Docker while Tempo is exposed on the Windows host. Therefore the Tempo data-source URL is:
+
+```text
+http://host.docker.internal:3200
+```
+
+and not `http://localhost:3200`, because `localhost` inside the Grafana container refers to the Grafana container itself.
+
+```text
+Grafana
+    ↓
+Tempo data source
+    ↓
+host.docker.internal:3200
+    ↓
+Tempo
+```
+
+Grafana Explore can then search and visualize trace waterfalls.
+
+---
+
+# 53. HTTP Distributed Trace Propagation
+
+The synchronous Enrollment → Course call was used to verify cross-JVM propagation.
+
+```text
+enrollment-service
+└── POST /enrollments
+    └── HTTP CLIENT GET
+        └── course-service
+            └── GET /jpa/courses/{id}
+```
+
+The trace context travels through standard HTTP trace headers. Spring instrumentation injects and extracts that context automatically; application code does not manually parse or create `traceparent`.
+
+The verified trace demonstrated:
+
+```text
+Enrollment SERVER span
+    ↓
+Enrollment CLIENT span
+    ↓
+same trace context
+    ↓
+Course SERVER span
+```
+
+The Course server span uses the Enrollment client span as its parent across the network boundary.
+
+The Course application is explicitly named:
+
+```properties
+spring.application.name=course-service
+```
+
+so Tempo / Grafana display the downstream service clearly. Spring Security observations also appear as child spans, including authentication and authorization work.
+
+---
+
+# 54. Kafka Distributed Trace Propagation
+
+Kafka introduces an asynchronous boundary.
+
+```text
+POST /jpa/courses
+        ↓
+course-service
+        ↓
+KafkaTemplate
+        ↓
+course-events
+        ↓
+@KafkaListener
+        ↓
+enrollment-service
+```
+
+Producer observation is enabled in Course Service:
+
+```properties
+spring.kafka.template.observation-enabled=true
+```
+
+Consumer observation is enabled in Enrollment Service:
+
+```properties
+spring.kafka.listener.observation-enabled=true
+```
+
+The trace context is propagated through Kafka record headers:
+
+```text
+course-service
+└── course-events send
+        │
+        │ trace context in Kafka headers
+        ▼
+    course-events
+        │
+        ▼
+enrollment-service
+└── course-events process
+```
+
+Both producer and consumer spans belong to the same distributed trace even though they execute in different JVMs at different times.
+
+This was verified alongside normal Kafka behavior:
+
+```text
+producer published record
+consumer group offset advanced
+consumer lag returned to 0
+@KafkaListener logged the consumed event
+consumer span appeared in the same Tempo trace
+```
+
+---
+
+# 55. Kafka Observation and Existing Metrics
+
+Before observation is enabled, Spring Kafka can expose legacy Micrometer timers.
+
+With Observation enabled:
+
+```text
+Kafka Observation
+    ↓
+metrics
++
+traces
++
+context propagation
+```
+
+The exact metric names / labels available from Spring Kafka can therefore change after enabling Observation. Existing Grafana Kafka panels should be rechecked after this change instead of assuming that the previous listener-timer labels remain identical.
+
+The custom application counters for DLT and duplicate-event handling remain independent business / technical instrumentation.
+
+---
+
+# 56. Understanding the Asynchronous Trace Gap
+
+A Kafka trace can contain a visible time gap between `course-events send` and `course-events process`:
+
+```text
+producer span ends
+      │
+      │ no active instrumented span
+      │
+consumer span begins
+```
+
+That entire gap must not automatically be called "Kafka broker latency". It can contain several things:
+
+```text
+broker storage
+    ↓
+record waiting in partition
+    ↓
+consumer poll / fetch cycle
+    ↓
+consumer thread scheduling
+    ↓
+framework / deserialization work
+    ↓
+listener observation starts
+```
+
+Tracing tells us that no instrumented span covers that interval; it does not by itself attribute every millisecond to one component.
+
+Another important consequence is that the distributed trace can live longer than the original HTTP request:
+
+```text
+HTTP request starts
+    ↓
+Kafka event published
+    ↓
+HTTP request finishes
+
+... asynchronous time ...
+
+Kafka consumer processes event
+    ↓
+distributed trace finishes
+```
+
+A trace therefore represents the distributed operation, not necessarily the lifetime of one synchronous request.
+
+---
+
+# 57. Trace / Log Correlation
+
+Micrometer Tracing adds the current tracing identifiers to the logging MDC.
+
+The project verified a Course producer log and an Enrollment consumer log with the same trace ID:
+
+```text
+Course producer
+traceId = 55d9f80db7338a3e41de62143ddfd239
+spanId  = abfd304c1d02a229
+
+Enrollment consumer
+traceId = 55d9f80db7338a3e41de62143ddfd239
+spanId  = b6ba9bf37af32aa1
+```
+
+Interpretation:
+
+```text
+same traceId
+→ same distributed operation
+
+different spanId
+→ different spans in that operation
+```
+
+This creates the basic correlation workflow:
+
+```text
+Log entry
+    ↓
+traceId
+    ↓
+Tempo
+    ↓
+complete distributed trace
+```
+
+The current plain-text console format already contains useful trace/span correlation, so no custom correlation pattern is required before moving to structured logging.
+
+---
+
+# 58. Current Observability Position
+
+The project now has all three observability signals in meaningful use:
+
+```text
+METRICS
+Prometheus
+    ↓
+What is happening at aggregate level?
+
+TRACES
+Tempo
+    ↓
+Where did one distributed operation spend time?
+
+LOGS
+traceId / spanId
+    ↓
+What exactly happened inside a span?
+```
+
+Completed tracing coverage:
+
+```text
+Micrometer Tracing / Observation          ✅
+OpenTelemetry                             ✅
+Tempo                                     ✅
+Grafana Tempo data source                 ✅
+HTTP Enrollment → Course propagation      ✅
+Kafka Course → Enrollment propagation     ✅
+Asynchronous trace interpretation         ✅
+Trace-log correlation                     ✅
+```
+
+
+```
 
 ---
 

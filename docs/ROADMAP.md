@@ -505,15 +505,30 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Grafana business-metrics row
   - [x] Metric-name normalization verified in Prometheus exposition
   - [x] Test doubles adapted for the expanded metrics port
-- [ ] Structured logging
+- [x] Distributed tracing
+  - [x] Trace / span / traceId / spanId fundamentals
+  - [x] Micrometer Tracing / Observation
+  - [x] OpenTelemetry starter and OTLP HTTP export
+  - [x] Standalone Grafana Tempo container
+  - [x] Tempo local storage and non-root volume permissions
+  - [x] Tempo readiness and TraceQL/API searches
+  - [x] Grafana Tempo data source
+  - [x] HTTP trace propagation: Enrollment → Course
+  - [x] Course Service naming with `spring.application.name=course-service`
+  - [x] Spring Security spans visible in distributed traces
+  - [x] Kafka producer observation
+  - [x] Kafka consumer observation
+  - [x] Kafka trace-context propagation through record headers
+  - [x] Asynchronous producer → consumer trace timing / gap interpretation
+  - [x] Trace-log correlation with shared `traceId` and per-span `spanId`
+- [ ] Structured logging — 🚧 CURRENT
 - [ ] Centralized logs / Loki
-- [ ] Trace-log correlation
+- [x] Trace-log correlation
 - [ ] SLIs / SLOs
 - [ ] Alerting
 
 ## Remaining Advanced Backend Engineering
 
-- [ ] Distributed tracing — 🚧 CURRENT
 - [ ] API versioning
 - [ ] Performance
 - [ ] Scalability
@@ -699,7 +714,11 @@ Custom Micrometer metrics       ✅
         ↓
 Business metrics / success rate ✅
         ↓
-Distributed tracing             🚧 CURRENT
+Distributed tracing             ✅
+        ↓
+Trace-log correlation           ✅
+        ↓
+Structured logging              🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓

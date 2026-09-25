@@ -24,6 +24,8 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * Spring Data MongoDB
 * Spring Boot Actuator
 * Micrometer
+* Micrometer Tracing / Observation
+* OpenTelemetry
 * Spring Cloud Circuit Breaker
 * Spring Kafka
 * OpenAPI 3.0.3
@@ -46,6 +48,7 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * Helm
 * Prometheus 3.14
 * Grafana 13.2
+* Grafana Tempo 3.0.3
 
 ## CI/CD
 
@@ -91,7 +94,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
-| Observability, Micrometer, Prometheus, PromQL, Grafana, JVM metrics and Kafka metrics | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| Observability, Micrometer, Prometheus, PromQL, Grafana, OpenTelemetry, Tempo, distributed tracing and Kafka observability | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
@@ -250,7 +253,11 @@ Custom Micrometer metrics       ✅
         ↓
 Business metrics / success rate ✅
         ↓
-Distributed tracing             🚧 CURRENT
+Distributed tracing             ✅
+        ↓
+Trace-log correlation           ✅
+        ↓
+Structured logging              🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
@@ -259,7 +266,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. The Enrollment Service exposes Micrometer metrics through Spring Boot Actuator and the Prometheus endpoint, Prometheus scrapes and stores the time series, and Grafana now visualizes HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag and throughput, listener processing/failures, custom DLT and duplicate-event metrics, and business metrics for Enrollment creation. Custom Micrometer instrumentation now records DLT recoveries by controlled reason, duplicate Kafka events skipped, Enrollment creation attempts, successful Enrollment creation and Course-validation failures. The next observability milestone is **distributed tracing**.
+The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. Metrics are exported with Micrometer / Actuator to Prometheus and visualized in Grafana, including HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag and throughput, listener processing/failures, custom DLT and duplicate-event metrics, and Enrollment business metrics. Distributed tracing is now also working end-to-end with Micrometer Tracing, OpenTelemetry and Tempo: HTTP context propagates from Enrollment → Course, Kafka context propagates asynchronously from Course → Enrollment, and application logs carry the shared `traceId` with span-specific `spanId` values. The next observability milestone is **structured logging**, followed by centralized logs with Loki.
 
 ---
 
@@ -907,7 +914,7 @@ Detailed theory and examples: [TESTING.md](docs/TESTING.md)
 
 # 📈 Observability
 
-The current **Advanced Backend Engineering** phase is focused on making the Enrollment Service observable from the outside.
+The current **Advanced Backend Engineering** phase is focused on making the two services observable through correlated metrics, traces and logs.
 
 The local metrics flow is:
 
@@ -930,14 +937,37 @@ Grafana
 Dashboards
 ```
 
+The local tracing flow is:
+
+```text
+Course Service / Enrollment Service
+    │
+    │ Micrometer Tracing / Observation
+    ▼
+OpenTelemetry
+    │
+    │ OTLP HTTP :4318
+    ▼
+Tempo
+    │
+    ▼
+Grafana Explore
+```
+
 Current local endpoints:
 
 ```text
+Course Service
+→ http://localhost:8080
+
 Enrollment Service
 → http://localhost:8081
 
 Prometheus
 → http://localhost:9090
+
+Tempo
+→ http://localhost:3200
 
 Grafana
 → http://localhost:3000
@@ -1022,9 +1052,27 @@ The Kafka panels now show backlog, ownership, throughput, listener execution and
 
 Business instrumentation is kept outside the framework-free application layer through `EnrollmentMetricsPort` and a Micrometer outbound adapter. The application records creation attempts, successful persisted Enrollments and missing-Course validation failures. Grafana derives a recent Enrollment creation success rate from the success and attempt counters. A longer local query window is used for the ratio because the tiny learning workload makes short sliding windows volatile.
 
-The custom Micrometer / business-metrics milestone is complete. The next observability milestone is **distributed tracing**, followed later by structured / centralized logging, trace-log correlation, SLIs/SLOs and alerting.
+The custom Micrometer / business-metrics milestone is complete.
 
-Detailed theory, configuration and PromQL examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
+Distributed tracing is also complete for the current course scope:
+
+```text
+HTTP
+Enrollment Service
+    ↓ traceparent
+Course Service
+
+Kafka
+Course Service
+    ↓ trace context in Kafka record headers
+Enrollment Service
+```
+
+Both services export traces through OpenTelemetry to Tempo. Grafana can visualize the complete span waterfall across JVM boundaries. Kafka producer and consumer observations preserve the same distributed `traceId` across the asynchronous boundary, while each span has its own `spanId`. The same identifiers are present in the application logs, completing trace-log correlation.
+
+The next observability milestone is **structured logging**, followed by centralized logging with Loki, SLIs/SLOs and alerting.
+
+Detailed theory, configuration, PromQL and tracing examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
 ---
 
