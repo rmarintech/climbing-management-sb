@@ -2220,20 +2220,15 @@ Saturation     → CPU + heap + GC
 Messaging      → Kafka lag + partitions + throughput + DLT + duplicates
 Business       → attempts + creations + validation failures + success rate
 Tracing        → HTTP + Kafka distributed traces
-Correlation    → traceId / spanId in application logs
+Logs           → structured JSON → Alloy → Loki
+Correlation    → Loki ↔ Tempo via traceId
 ```
 
-The **custom Micrometer / business-metrics milestone is complete**.
+Completed: custom metrics, distributed tracing, structured logging and centralized logging.
 
-The **distributed tracing milestone is also complete** for the current course scope.
-
-The next active observability topic is:
+Next:
 
 ```text
-Structured logging
-    ↓
-Centralized logs / Loki
-    ↓
 SLIs / SLOs
     ↓
 Alerting
@@ -2596,41 +2591,135 @@ The current plain-text console format already contains useful trace/span correla
 
 ---
 
-# 58. Current Observability Position
+# 58. Structured JSON Logging
 
-The project now has all three observability signals in meaningful use:
+Enrollment Service writes Logstash-style JSON to console and file:
 
-```text
-METRICS
-Prometheus
-    ↓
-What is happening at aggregate level?
-
-TRACES
-Tempo
-    ↓
-Where did one distributed operation spend time?
-
-LOGS
-traceId / spanId
-    ↓
-What exactly happened inside a span?
+```properties
+logging.structured.format.console=logstash
+logging.file.name=logs/enrollment-service.log
+logging.structured.format.file=logstash
 ```
 
-Completed tracing coverage:
+SLF4J key/value logging exposes business data as real fields:
 
-```text
-Micrometer Tracing / Observation          ✅
-OpenTelemetry                             ✅
-Tempo                                     ✅
-Grafana Tempo data source                 ✅
-HTTP Enrollment → Course propagation      ✅
-Kafka Course → Enrollment propagation     ✅
-Asynchronous trace interpretation         ✅
-Trace-log correlation                     ✅
+```java
+log.atInfo()
+        .addKeyValue("eventType", event.eventType())
+        .addKeyValue("courseId", event.courseId())
+        .addKeyValue("partition", record.partition())
+        .addKeyValue("offset", record.offset())
+        .log("CourseCreatedEvent consumed");
 ```
 
+Tracing MDC values remain JSON fields:
 
+```json
+{"message":"CourseCreatedEvent consumed","courseId":82,"traceId":"...","spanId":"..."}
+```
+
+Keep `traceId`, `spanId`, `eventId` and `courseId` out of low-cardinality metric/Loki labels.
+
+---
+
+# 59. Centralized Logging — Alloy and Loki
+
+```text
+Enrollment Service
+    ↓
+logs/enrollment-service.log
+    ↓
+Grafana Alloy
+    ↓
+Loki :3100
+    ↓
+Grafana
+```
+
+Project files:
+
+```text
+observability/alloy/config.alloy
+observability/loki/loki-config.yaml
+```
+
+Endpoints:
+
+```text
+Loki  → http://localhost:3100
+Alloy → http://localhost:12345
+```
+
+Basic LogQL:
+
+```logql
+{job="enrollment-service"} | json
+{job="enrollment-service"} | json | level="INFO"
+{job="enrollment-service"} | json | eventType="COURSE_CREATED"
+{job="enrollment-service"} | json | traceId="..."
+```
+
+Operational commands: `cheatsheets/AE_Loki.md`.
+
+---
+
+# 60. Loki → Tempo
+
+Loki derived field:
+
+```text
+Name:        TraceID
+Regex:       "traceId":"(\w+)"
+Data source: Tempo
+Query:       ${__value.raw}
+```
+
+```text
+Loki log
+    ↓ traceId
+Tempo trace
+```
+
+`traceId` stays a JSON field, not a high-cardinality Loki stream label.
+
+---
+
+# 61. Tempo → Loki
+
+Tempo **Trace to logs**:
+
+```text
+Data source: Loki
+Tag mapping: service.name → service
+Filter by trace ID: ON
+```
+
+```text
+Tempo span
+    ↓ service + traceId
+Loki logs
+```
+
+Bidirectional correlation:
+
+```text
+Loki ── traceId ──► Tempo
+  ▲                  │
+  └──── logs ────────┘
+```
+
+---
+
+# 62. Current Observability Position
+
+```text
+Metrics     → Micrometer → Prometheus → Grafana       ✅
+Traces      → OpenTelemetry → Tempo → Grafana         ✅
+Logs        → JSON → Alloy → Loki → Grafana           ✅
+Loki → Tempo                                          ✅
+Tempo → Loki                                          ✅
+SLIs / SLOs                                           🚧
+Alerting                                              ⏳
 ```
 
 ---

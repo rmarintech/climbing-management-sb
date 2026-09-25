@@ -2,7 +2,7 @@
 
 A backend system built with Java 21 and Spring Boot for managing climbing courses and enrollments.
 
-The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, observability with Micrometer, Prometheus and Grafana, and modern deployment practices.
+The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, observability with Micrometer, Prometheus, Grafana, OpenTelemetry, Tempo and Loki, and modern deployment practices.
 
 The application has been developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -49,6 +49,8 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * Prometheus 3.14
 * Grafana 13.2
 * Grafana Tempo 3.0.3
+* Grafana Loki 3.7
+* Grafana Alloy
 
 ## CI/CD
 
@@ -94,7 +96,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | DDD / Hexagonal Architecture | [DDD.md](docs/DDD.md) |
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
-| Observability, Micrometer, Prometheus, PromQL, Grafana, OpenTelemetry, Tempo, distributed tracing and Kafka observability | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| Observability, Prometheus, Grafana, OpenTelemetry, Tempo, structured logs, Alloy and Loki | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 
 ---
 
@@ -257,7 +259,13 @@ Distributed tracing             ✅
         ↓
 Trace-log correlation           ✅
         ↓
-Structured logging              🚧 CURRENT
+Structured logging              ✅
+        ↓
+Loki / Alloy centralized logs   ✅
+        ↓
+Logs ↔ Traces correlation       ✅
+        ↓
+SLIs / SLOs                     🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
@@ -266,7 +274,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. Metrics are exported with Micrometer / Actuator to Prometheus and visualized in Grafana, including HTTP traffic and errors, latency percentiles, JVM CPU / heap / GC behavior, Kafka lag and throughput, listener processing/failures, custom DLT and duplicate-event metrics, and Enrollment business metrics. Distributed tracing is now also working end-to-end with Micrometer Tracing, OpenTelemetry and Tempo: HTTP context propagates from Enrollment → Course, Kafka context propagates asynchronously from Course → Enrollment, and application logs carry the shared `traceId` with span-specific `spanId` values. The next observability milestone is **structured logging**, followed by centralized logs with Loki.
+The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. Metrics flow through Micrometer / Actuator → Prometheus → Grafana; traces flow through Micrometer Tracing / OpenTelemetry → Tempo → Grafana; structured JSON logs flow through Alloy → Loki → Grafana. HTTP and Kafka trace propagation are verified, and Grafana now supports bidirectional Loki ↔ Tempo navigation using `traceId`. The next observability milestone is **SLIs / SLOs**, followed by alerting.
 
 ---
 
@@ -954,6 +962,20 @@ Tempo
 Grafana Explore
 ```
 
+The local logging flow is:
+
+```text
+Enrollment Service
+    ↓ structured JSON
+logs/enrollment-service.log
+    ↓
+Grafana Alloy
+    ↓
+Loki
+    ↓
+Grafana Explore
+```
+
 Current local endpoints:
 
 ```text
@@ -968,6 +990,12 @@ Prometheus
 
 Tempo
 → http://localhost:3200
+
+Loki
+→ http://localhost:3100
+
+Alloy
+→ http://localhost:12345
 
 Grafana
 → http://localhost:3000
@@ -1068,11 +1096,13 @@ Course Service
 Enrollment Service
 ```
 
-Both services export traces through OpenTelemetry to Tempo. Grafana can visualize the complete span waterfall across JVM boundaries. Kafka producer and consumer observations preserve the same distributed `traceId` across the asynchronous boundary, while each span has its own `spanId`. The same identifiers are present in the application logs, completing trace-log correlation.
+Both services export traces through OpenTelemetry to Tempo. Kafka producer and consumer observations preserve the same distributed `traceId` across the asynchronous boundary, while each span has its own `spanId`.
 
-The next observability milestone is **structured logging**, followed by centralized logging with Loki, SLIs/SLOs and alerting.
+Enrollment logs now use Spring Boot Logstash JSON plus SLF4J key/value fields. Alloy tails the JSON log file and forwards entries to Loki. Grafana supports both **Loki → Tempo** and **Tempo → Loki** navigation without using high-cardinality trace IDs as Loki stream labels.
 
-Detailed theory, configuration, PromQL and tracing examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
+The next observability milestone is **SLIs / SLOs**, followed by alerting.
+
+Detailed theory, configuration, PromQL, tracing and centralized-logging examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
 ---
 
@@ -1287,6 +1317,10 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Grafana dashboards
 * HTTP latency histograms and percentiles
 * JVM CPU, heap and GC metrics
+* OpenTelemetry distributed tracing with Tempo
+* Structured JSON logging
+* Grafana Alloy and Loki centralized logs
+* Bidirectional logs ↔ traces correlation
 * Scalability
 * System design
 
@@ -1301,4 +1335,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `Micrometer` · `Prometheus` · `PromQL` · `Grafana` · `DataMongoTest`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `Micrometer` · `OpenTelemetry` · `Prometheus` · `PromQL` · `Grafana` · `Tempo` · `Loki` · `Grafana Alloy` · `DataMongoTest`

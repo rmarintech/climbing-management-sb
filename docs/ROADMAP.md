@@ -521,10 +521,19 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Kafka trace-context propagation through record headers
   - [x] Asynchronous producer → consumer trace timing / gap interpretation
   - [x] Trace-log correlation with shared `traceId` and per-span `spanId`
-- [ ] Structured logging — 🚧 CURRENT
-- [ ] Centralized logs / Loki
+- [x] Structured logging
+  - [x] Spring Boot Logstash JSON console/file format
+  - [x] SLF4J fluent key/value business fields
+  - [x] `traceId` / `spanId` preserved as JSON fields
+- [x] Centralized logs / Loki
+  - [x] Standalone Loki with persistent local storage
+  - [x] Grafana Alloy file collection
+  - [x] LogQL / JSON field queries
+  - [x] Loki → Tempo trace link
+  - [x] Tempo → Loki logs-for-trace link
+  - [x] Bidirectional log / trace correlation
 - [x] Trace-log correlation
-- [ ] SLIs / SLOs
+- [ ] SLIs / SLOs — 🚧 CURRENT
 - [ ] Alerting
 
 ## Remaining Advanced Backend Engineering
@@ -718,7 +727,13 @@ Distributed tracing             ✅
         ↓
 Trace-log correlation           ✅
         ↓
-Structured logging              🚧 CURRENT
+Structured logging              ✅
+        ↓
+Loki / Alloy centralized logs   ✅
+        ↓
+Logs ↔ Traces correlation       ✅
+        ↓
+SLIs / SLOs                     🚧 CURRENT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
