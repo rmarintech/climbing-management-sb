@@ -265,7 +265,13 @@ Loki / Alloy centralized logs   ✅
         ↓
 Logs ↔ Traces correlation       ✅
         ↓
-SLIs / SLOs                     🚧 CURRENT
+SLIs / SLOs                     ✅
+        ↓
+Grafana alerting                ✅
+        ↓
+Observability                   ✅
+        ↓
+API versioning                  ⏳ NEXT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
@@ -274,7 +280,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing phase is complete** for the planned course scope. The current **Advanced Backend Engineering** work is focused on observability. Metrics flow through Micrometer / Actuator → Prometheus → Grafana; traces flow through Micrometer Tracing / OpenTelemetry → Tempo → Grafana; structured JSON logs flow through Alloy → Loki → Grafana. HTTP and Kafka trace propagation are verified, and Grafana now supports bidirectional Loki ↔ Tempo navigation using `traceId`. The next observability milestone is **SLIs / SLOs**, followed by alerting.
+The **Testing and Observability phases are complete** for the planned course scope. Metrics flow through Micrometer / Actuator → Prometheus → Grafana; traces through Micrometer Tracing / OpenTelemetry → Tempo → Grafana; structured JSON logs through Alloy → Loki → Grafana. HTTP and Kafka trace propagation, bidirectional Loki ↔ Tempo navigation, availability and latency SLIs, error budgets, burn-rate monitoring, multi-window SLO alerts and webhook delivery are verified. The next Advanced Backend Engineering milestone is **API versioning**.
 
 ---
 
@@ -1100,9 +1106,9 @@ Both services export traces through OpenTelemetry to Tempo. Kafka producer and c
 
 Enrollment logs now use Spring Boot Logstash JSON plus SLF4J key/value fields. Alloy tails the JSON log file and forwards entries to Loki. Grafana supports both **Loki → Tempo** and **Tempo → Loki** navigation without using high-cardinality trace IDs as Loki stream labels.
 
-The next observability milestone is **SLIs / SLOs**, followed by alerting.
+The observability phase also defines a `99%` availability SLO, a `95% ≤ 500 ms` latency objective backed by an explicit `500ms` histogram bucket, error-budget and burn-rate panels, fast/slow multi-window burn alerts, and a verified Grafana webhook notification path.
 
-Detailed theory, configuration, PromQL, tracing and centralized-logging examples: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
+Detailed theory, configuration, PromQL, tracing, centralized logging, SLOs and alerting: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
 ---
 

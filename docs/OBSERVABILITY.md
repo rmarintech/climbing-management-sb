@@ -2224,14 +2224,16 @@ Logs           → structured JSON → Alloy → Loki
 Correlation    → Loki ↔ Tempo via traceId
 ```
 
-Completed: custom metrics, distributed tracing, structured logging and centralized logging.
+Completed: custom metrics, distributed tracing, structured logging, centralized logging, SLIs / SLOs and Grafana alerting.
 
 Next:
 
 ```text
-SLIs / SLOs
+API versioning
     ↓
-Alerting
+Performance
+    ↓
+Scalability
 ```
 
 ---
@@ -2710,18 +2712,231 @@ Loki ── traceId ──► Tempo
 
 ---
 
-# 62. Current Observability Position
+# 62. SLIs / SLOs
+
+Core model:
 
 ```text
-Metrics     → Micrometer → Prometheus → Grafana       ✅
-Traces      → OpenTelemetry → Tempo → Grafana         ✅
-Logs        → JSON → Alloy → Loki → Grafana           ✅
-Loki → Tempo                                          ✅
-Tempo → Loki                                          ✅
-SLIs / SLOs                                           🚧
-Alerting                                              ⏳
+SLI → what is measured
+SLO → target for the SLI
+SLA → external/business commitment
+Error budget → allowed unreliability
+```
+
+Current learning availability objective:
+
+```text
+SLI: non-5xx requests / total requests
+SLO: 99%
+Error budget: 1%
+Production concept: rolling 30-day window
+Local exercise: short PromQL windows
+```
+
+Availability SLI:
+
+```promql
+100 *
+(
+  1 -
+  (
+    sum(rate(http_server_requests_seconds_count{
+      job="enrollment-service",
+      status=~"5.."
+    }[5m]))
+    /
+    sum(rate(http_server_requests_seconds_count{
+      job="enrollment-service"
+    }[5m]))
+  )
+)
+```
+
+4xx responses are not treated as service-availability failures for this SLI; 5xx responses are.
+
+---
+
+# 63. Latency SLI
+
+Learning objective:
+
+```text
+95% of successful /enrollments requests
+must complete in ≤ 500 ms
+```
+
+The exact threshold is added as a Micrometer SLO bucket:
+
+```properties
+management.metrics.distribution.percentiles-histogram.http.server.requests=true
+management.metrics.distribution.slo.http.server.requests=500ms
+```
+
+Latency SLI:
+
+```promql
+100 *
+sum(
+  rate(
+    http_server_requests_seconds_bucket{
+      job="enrollment-service",
+      uri="/enrollments",
+      status=~"2..",
+      le="0.5"
+    }[5m]
+  )
+)
+/
+sum(
+  rate(
+    http_server_requests_seconds_count{
+      job="enrollment-service",
+      uri="/enrollments",
+      status=~"2.."
+    }[5m]
+  )
+)
+```
+
+Difference:
+
+```text
+p95 latency
+→ 95% finished within HOW LONG?
+
+Latency SLI
+→ HOW MANY % finished within 500 ms?
 ```
 
 ---
+
+# 64. Error Budget and Burn Rate
+
+For the `99%` availability SLO:
+
+```text
+Allowed error ratio = 1% = 0.01
+```
+
+Burn rate:
+
+```text
+actual error ratio
+------------------
+allowed error ratio
+```
+
+PromQL:
+
+```promql
+(
+  sum(rate(http_server_requests_seconds_count{
+    job="enrollment-service",
+    status=~"5.."
+  }[5m]))
+  /
+  sum(rate(http_server_requests_seconds_count{
+    job="enrollment-service"
+  }[5m]))
+)
+/
+0.01
+```
+
+Interpretation:
+
+```text
+0   → no budget burn
+1   → burning at the allowed rate
+2   → burning 2x too fast
+7.69 → burning 7.69x too fast
+```
+
+Grafana panels implemented:
+
+```text
+Availability SLI
+Latency SLI ≤ 500 ms
+Error Budget Consumed
+Error Budget Remaining
+Burn Rate — 5m
+Burn Rate — 1h
+```
+
+---
+
+# 65. Multi-Window Burn-Rate Alerts
+
+Fast burn:
+
+```text
+5m burn rate > 14.4
+AND
+1h burn rate > 14.4
+```
+
+Slow burn:
+
+```text
+30m burn rate > 6
+AND
+6h burn rate > 6
+```
+
+Purpose:
+
+```text
+Fast burn → severe current degradation
+Slow burn → smaller but sustained degradation
+```
+
+Grafana alert expressions use the Prometheus results directly because the burn-rate queries already return single values:
+
+```text
+A = short-window burn rate
+B = long-window burn rate
+C = $A > threshold && $B > threshold
+```
+
+`C` is the alert condition. The legacy Classic condition and unnecessary Reduce expressions are not used.
+
+---
+
+# 66. Grafana Alerting and Webhook Delivery
+
+Alert labels:
+
+```text
+service=enrollment-service
+slo=availability
+severity=critical | warning
+```
+
+Notification path:
+
+```text
+Prometheus
+    ↓
+Grafana alert rule
+    ↓
+notification policy
+    ↓
+webhook contact point
+    ↓
+observability/other/webhook_receiver.py
+```
+
+Local webhook URL from the Grafana container:
+
+```text
+http://host.docker.internal:8085/
+```
+
+The Python receiver is used instead of Windows `HttpListener`, which required an HTTP URL reservation / elevated shell for the attempted `http://+:8085/` binding.
+
+Real `FIRING` alert delivery to the Python receiver has been verified.
+
+---
+
 
 [Back to README](../README.md)

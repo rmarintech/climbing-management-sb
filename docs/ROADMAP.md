@@ -424,7 +424,7 @@ Current testing documentation: [TESTING.md](TESTING.md).
 
 # 🔜 Advanced Backend Engineering
 
-## Observability — 🚧 CURRENT
+## Observability — ✅ COMPLETE
 
 - [x] Observability fundamentals
   - [x] Instrumentation vs telemetry vs monitoring vs observability
@@ -533,12 +533,33 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Tempo → Loki logs-for-trace link
   - [x] Bidirectional log / trace correlation
 - [x] Trace-log correlation
-- [ ] SLIs / SLOs — 🚧 CURRENT
-- [ ] Alerting
+- [x] SLIs / SLOs
+  - [x] SLI vs SLO vs SLA fundamentals
+  - [x] Availability SLI from non-5xx / total requests
+  - [x] Learning availability SLO: 99%
+  - [x] Request-based error budget: 1%
+  - [x] Explicit `500ms` HTTP histogram SLO bucket
+  - [x] Latency SLI: 95% of successful `/enrollments` requests ≤ 500 ms
+  - [x] Error budget consumed
+  - [x] Error budget remaining
+  - [x] Burn-rate calculation
+  - [x] 5m and 1h burn-rate panels
+  - [x] Fast-burn multi-window strategy: 5m + 1h at 14.4x
+  - [x] Slow-burn multi-window strategy: 30m + 6h at 6x
+- [x] Alerting
+  - [x] Grafana alert-rule fundamentals
+  - [x] Math expression condition instead of Classic condition
+  - [x] Fast-burn alert rule
+  - [x] Slow-burn alert rule
+  - [x] Alert labels: service / severity / slo
+  - [x] Grafana notification policy
+  - [x] Webhook contact point
+  - [x] Local Python webhook receiver
+  - [x] Real FIRING notification delivery verified
 
 ## Remaining Advanced Backend Engineering
 
-- [ ] API versioning
+- [ ] API versioning — ⏳ NEXT
 - [ ] Performance
 - [ ] Scalability
 - [ ] System design
@@ -733,7 +754,13 @@ Loki / Alloy centralized logs   ✅
         ↓
 Logs ↔ Traces correlation       ✅
         ↓
-SLIs / SLOs                     🚧 CURRENT
+SLIs / SLOs                     ✅
+        ↓
+Grafana alerting                ✅
+        ↓
+Observability                   ✅
+        ↓
+API versioning                  ⏳ NEXT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
