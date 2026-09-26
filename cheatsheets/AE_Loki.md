@@ -220,3 +220,24 @@ Loki ── traceId ──► Tempo
 
 Logs → Traces ✅
 Traces → Logs ✅
+
+12. CURRENT STATUS
+    =================
+
+Structured JSON logs              ✅
+SLF4J key/value business fields   ✅
+Alloy file collection             ✅
+Loki ingestion                    ✅
+LogQL JSON queries                ✅
+Loki → Tempo                      ✅
+Tempo → Loki                      ✅
+
+High-cardinality identifiers stay in log fields:
+traceId
+spanId
+eventId
+courseId
+
+Low-cardinality stream labels:
+job
+service

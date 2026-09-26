@@ -438,3 +438,26 @@ locate problem
 Logs
 ↓
 understand details
+
+20. CURRENT STATUS
+    =================
+
+HTTP distributed tracing:
+Enrollment → Course ✅
+
+Kafka distributed tracing:
+Course → Kafka → Enrollment ✅
+
+Trace/log correlation:
+shared traceId + per-span spanId ✅
+
+Grafana:
+Tempo visualization ✅
+Loki → Tempo ✅
+Tempo → Loki ✅
+
+Current observability flow:
+
+Metrics → Prometheus → Grafana
+Traces  → OpenTelemetry → Tempo → Grafana
+Logs    → Alloy → Loki → Grafana

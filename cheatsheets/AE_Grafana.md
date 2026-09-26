@@ -952,26 +952,281 @@ Enrollments Created → Enrollments Created
 Course Validation Failures → Validation Failures
 Enrollment Creation Success Rate → Success Rate
 
-40. NEXT — DISTRIBUTED TRACING
-    ==============================
+40. SLO DASHBOARD
+    ==================
 
-Custom Micrometer / business metrics are complete.
+Row:
+Enrollment Service — SLOs
 
-Next:
-Distributed tracing
+Panels:
+├── Availability SLI
+├── Latency SLI ≤ 500 ms
+├── Error Budget Consumed
+├── Error Budget Remaining
+├── Burn Rate — 5m
+└── Burn Rate — 1h
 
-Planned flow:
-request enters Enrollment
-→ Enrollment span
-→ REST call to Course Service
-→ Course span
-→ same traceId
 
-Topics:
-trace / span fundamentals
-Micrometer Tracing
-OpenTelemetry
-HTTP trace propagation
-Enrollment → Course distributed trace
-later Kafka propagation
-later trace-log correlation
+41. AVAILABILITY SLI
+    ====================
+
+Target:
+99%
+
+PromQL:
+100 *
+(
+1 -
+(
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]
+)
+)
+/
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]
+)
+)
+)
+)
+
+Visualization:
+Stat
+
+Unit:
+Percent (0-100)
+
+4xx responses are not service-availability failures for this SLI.
+5xx responses are.
+
+
+42. LATENCY SLI ≤ 500 MS
+    =========================
+
+Target:
+95% of successful /enrollments requests ≤ 500 ms
+
+Required Micrometer SLO bucket:
+management.metrics.distribution.slo.http.server.requests=500ms
+
+PromQL:
+100 *
+sum(
+rate(
+http_server_requests_seconds_bucket{
+job="enrollment-service",
+uri="/enrollments",
+status=~"2..",
+le="0.5"
+}[5m]
+)
+)
+/
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service",
+uri="/enrollments",
+status=~"2.."
+}[5m]
+)
+)
+
+Visualization:
+Stat
+
+Unit:
+Percent (0-100)
+
+Difference:
+p95 → 95% finished within HOW LONG?
+Latency SLI → HOW MANY % finished within 500 ms?
+
+
+43. ERROR BUDGET
+    =================
+
+Availability SLO:
+99%
+
+Allowed error ratio:
+1% = 0.01
+
+Error Budget Consumed:
+100 *
+(
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]
+)
+)
+/
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]
+)
+)
+)
+/
+0.01
+
+Error Budget Remaining:
+clamp_min(
+100 -
+(
+100 *
+(
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]
+)
+)
+/
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]
+)
+)
+)
+/
+0.01
+),
+0
+)
+
+
+44. BURN RATE
+    =============
+
+Formula:
+actual error ratio / allowed error ratio
+
+5m:
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]))
+)
+/
+0.01
+
+1h:
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[1h]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[1h]))
+)
+/
+0.01
+
+Interpretation:
+0 → no budget burn
+1 → burning at allowed rate
+2 → burning 2x too fast
+
+
+45. SLO ALERT RULES
+    ====================
+
+Fast burn:
+5m > 14.4
+AND
+1h > 14.4
+
+Slow burn:
+30m > 6
+AND
+6h > 6
+
+Grafana rule:
+A = short-window burn rate
+B = long-window burn rate
+C = $A > threshold && $B > threshold
+
+Set C as alert condition.
+
+Do NOT use:
+Classic condition (legacy)
+
+Reduce is unnecessary when A and B already return one value.
+
+
+46. ALERT LABELS
+    =================
+
+Fast burn:
+service=enrollment-service
+severity=critical
+slo=availability
+
+Slow burn:
+service=enrollment-service
+severity=warning
+slo=availability
+
+
+47. WEBHOOK NOTIFICATION
+    ========================
+
+Grafana:
+Alerting
+→ Notification configuration
+→ Contact points
+→ Webhook
+
+Local URL:
+http://host.docker.internal:8085/
+
+Notification path:
+Prometheus
+↓
+Grafana alert rule
+↓
+notification policy
+↓
+webhook contact point
+↓
+observability/other/webhook_receiver.py
+
+Verified:
+FIRING notification delivered to local Python receiver ✅
+
+
+48. CURRENT OBSERVABILITY STATUS
+    ================================
+
+Metrics     → Prometheus → Grafana      ✅
+Traces      → Tempo → Grafana           ✅
+Logs        → Loki → Grafana            ✅
+Logs ↔ Traces                            ✅
+SLIs / SLOs                              ✅
+Error budget / burn rate                 ✅
+Grafana alerting                         ✅
+Webhook delivery                         ✅

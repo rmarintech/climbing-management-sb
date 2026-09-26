@@ -518,3 +518,185 @@ Interpretation:
 
 This demonstrates tail latency:
 typical request latency != slow-user request latency
+
+
+22. SLO HISTOGRAM BUCKET
+    ========================
+
+For the latency SLO:
+95% of successful /enrollments requests ≤ 500 ms
+
+Add:
+management.metrics.distribution.slo.http.server.requests=500ms
+
+Keep:
+management.metrics.distribution.percentiles-histogram.http.server.requests=true
+
+Verify:
+http_server_requests_seconds_bucket{
+job="enrollment-service",
+uri="/enrollments",
+le="0.5"
+}
+
+
+23. AVAILABILITY SLI
+    ====================
+
+Target:
+99%
+
+100 *
+(
+1 -
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]))
+)
+)
+
+Meaning:
+good requests / total requests
+
+For this SLI:
+4xx → not service failure
+5xx → service failure
+
+
+24. LATENCY SLI ≤ 500 MS
+    =========================
+
+100 *
+sum(
+rate(
+http_server_requests_seconds_bucket{
+job="enrollment-service",
+uri="/enrollments",
+status=~"2..",
+le="0.5"
+}[5m]
+)
+)
+/
+sum(
+rate(
+http_server_requests_seconds_count{
+job="enrollment-service",
+uri="/enrollments",
+status=~"2.."
+}[5m]
+)
+)
+
+No successful traffic in the window:
+0 / 0 → no data
+
+Do not force no traffic to 0%.
+
+
+25. ERROR BUDGET
+    =================
+
+SLO:
+99%
+
+Allowed error ratio:
+0.01
+
+Budget consumed:
+100 *
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]))
+)
+/
+0.01
+
+Budget remaining:
+clamp_min(
+100 -
+(
+100 *
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]))
+)
+/
+0.01
+),
+0
+)
+
+
+26. BURN RATE
+    =============
+
+Burn rate:
+actual error ratio / allowed error ratio
+
+5m:
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[5m]))
+)
+/
+0.01
+
+1h:
+(
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service",
+status=~"5.."
+}[1h]))
+/
+sum(rate(http_server_requests_seconds_count{
+job="enrollment-service"
+}[1h]))
+)
+/
+0.01
+
+Interpretation:
+1 → burning exactly at allowed rate
+>1 → consuming budget too fast
+
+
+27. MULTI-WINDOW ALERT THRESHOLDS
+    =================================
+
+Fast burn:
+5m > 14.4
+AND
+1h > 14.4
+
+Slow burn:
+30m > 6
+AND
+6h > 6
+
+Prometheus provides the values.
+Grafana evaluates the alert conditions.
