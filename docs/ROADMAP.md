@@ -390,6 +390,7 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
   - [x] Dedicated repository-query tests intentionally skipped because `EnrollmentRepository` declares no custom queries
 - [x] REST API MVC/security slice tests
   - [x] `@WebMvcTest(EnrollmentController.class)`
+  - [x] `@WebMvcTest(EnrollmentV2Controller.class)`
   - [x] `@MockitoBean` for Spring-managed mocked use cases
   - [x] `@Import(SecurityConfiguration.class)`
   - [x] `@EnableWebSecurity` for `HttpSecurity` in the MVC slice
@@ -401,10 +402,14 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
   - [x] POST without JWT → `401`
   - [x] POST with `ROLE_USER` → `403`
   - [x] POST with `ROLE_ADMIN` → `201`
-  - [x] JSON request → `CreateEnrollmentCommand` mapping verified with `ArgumentCaptor`
+  - [x] V1 JSON request → `CreateEnrollmentCommand` mapping verified with `ArgumentCaptor`
+  - [x] V2 nested `student.name` request → same `CreateEnrollmentCommand`
   - [x] Domain result → JSON response mapping verified
   - [x] Invalid `courseId` → `400`
-  - [x] Blank `studentName` → `400`
+  - [x] Blank student name → `400` in both API contracts
+  - [x] V1 responses expose `Deprecation` header
+  - [x] V2 responses do not expose `Deprecation` header
+  - [x] Old unversioned `/enrollments` route → `404`
   - [x] Rejected requests verified not to invoke the use case
 - [x] Full HTTP integration tests
   - [x] Full Spring application context with `@SpringBootTest`
@@ -414,8 +419,10 @@ Theory, configuration examples and manual checks: [SECURITY.md](SECURITY.md).
   - [x] External Course Service isolated through mocked `CourseRestAdapter`
   - [x] Dummy `course-service.base-url` supplied only for configuration binding
   - [x] GET: persisted Mongo document → real application → `200` JSON
-  - [x] POST success: ADMIN → real application → MongoDB → `201`
+  - [x] V1 POST success: ADMIN → real application → MongoDB → `201`
+  - [x] V2 POST success: nested request → same application/domain → MongoDB → `201`
   - [x] POST missing Course: real `CourseNotFoundException` / `GlobalExceptionHandler` → `404`
+  - [x] Old unversioned endpoint verified as `404`
   - [x] Missing-Course failure verified to leave MongoDB unchanged
 
 Current testing documentation: [TESTING.md](TESTING.md).
@@ -557,9 +564,37 @@ Current testing documentation: [TESTING.md](TESTING.md).
   - [x] Local Python webhook receiver
   - [x] Real FIRING notification delivery verified
 
+## API Versioning — ✅ COMPLETE
+
+- [x] API versioning fundamentals
+- [x] Path-based versioning selected for the Enrollment API
+- [x] Versioned V1 route: `/api/v1/enrollments`
+- [x] Versioned V2 route: `/api/v2/enrollments`
+- [x] OpenAPI remains the HTTP contract source of truth
+- [x] OpenAPI Generator `useTags=true` for stable generated API-interface names
+- [x] V1 generated interface: `EnrollmentsApi`
+- [x] V2 generated interface: `EnrollmentsV2Api`
+- [x] V1 request contract preserved with `studentName`
+- [x] V2 breaking request shape introduced with nested `student.name`
+- [x] `EnrollmentV2Controller` introduced as a separate inbound adapter
+- [x] V1 and V2 both map into the same `CreateEnrollmentCommand`
+- [x] Application use cases remain version-independent
+- [x] Domain model remains version-independent
+- [x] No V2 domain model introduced for an HTTP-only shape change
+- [x] Spring Security rules updated for both API versions
+- [x] V1 and V2 MVC/security tests
+- [x] V1 and V2 full HTTP integration coverage
+- [x] Old unversioned `/enrollments` route verified as `404`
+- [x] V1 marked `deprecated: true` in OpenAPI
+- [x] V1 runtime responses expose a `Deprecation` header
+- [x] V2 responses remain non-deprecated
+- [x] Backward-compatible coexistence of V1 and V2 verified
+
+Detailed notes: [API_VERSIONING.md](API_VERSIONING.md).
+
 ## Remaining Advanced Backend Engineering
 
-- [ ] API versioning — ⏳ NEXT
+- [ ] Version-aware observability refresh — ⏳ NEXT
 - [ ] Performance
 - [ ] Scalability
 - [ ] System design
@@ -760,7 +795,13 @@ Grafana alerting                ✅
         ↓
 Observability                   ✅
         ↓
-API versioning                  ⏳ NEXT
+API versioning                  ✅
+        ↓
+V1 / V2 coexistence             ✅
+        ↓
+V1 deprecation                  ✅
+        ↓
+Version-aware observability     ⏳ NEXT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓

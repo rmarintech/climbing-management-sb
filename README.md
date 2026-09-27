@@ -2,7 +2,7 @@
 
 A backend system built with Java 21 and Spring Boot for managing climbing courses and enrollments.
 
-The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, OAuth2/JWT security, observability with Micrometer, Prometheus, Grafana, OpenTelemetry, Tempo and Loki, and modern deployment practices.
+The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, API versioning, OAuth2/JWT security, observability with Micrometer, Prometheus, Grafana, OpenTelemetry, Tempo and Loki, and modern deployment practices.
 
 The application has been developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -97,6 +97,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Spring Security, HTTP Basic, RBAC, CSRF, stateless authentication, OAuth2/OIDC, JWT and Keycloak | [SECURITY.md](docs/SECURITY.md) |
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
 | Observability, Prometheus, Grafana, OpenTelemetry, Tempo, structured logs, Alloy and Loki | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| API versioning, compatibility and deprecation | [API_VERSIONING.md](docs/API_VERSIONING.md) |
 
 ---
 
@@ -271,7 +272,13 @@ Grafana alerting                ✅
         ↓
 Observability                   ✅
         ↓
-API versioning                  ⏳ NEXT
+API versioning                  ✅
+        ↓
+V1 / V2 coexistence              ✅
+        ↓
+V1 deprecation                   ✅
+        ↓
+Version-aware observability      ⏳ NEXT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
@@ -280,7 +287,7 @@ System Design                   ⏳
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing and Observability phases are complete** for the planned course scope. Metrics flow through Micrometer / Actuator → Prometheus → Grafana; traces through Micrometer Tracing / OpenTelemetry → Tempo → Grafana; structured JSON logs through Alloy → Loki → Grafana. HTTP and Kafka trace propagation, bidirectional Loki ↔ Tempo navigation, availability and latency SLIs, error budgets, burn-rate monitoring, multi-window SLO alerts and webhook delivery are verified. The next Advanced Backend Engineering milestone is **API versioning**.
+The **Testing, Observability and API Versioning milestones are complete** for the planned course scope. The Enrollment API now exposes coexisting `/api/v1/enrollments` and `/api/v2/enrollments` contracts while both versions reuse the same application use cases and domain model. V1 remains supported but is deprecated; V2 demonstrates a breaking HTTP request-shape change without leaking API-version concerns into the domain. The immediate next step is a **version-aware observability refresh** so Prometheus/Grafana URI filters follow the new routes before moving into performance work.
 
 ---
 
@@ -329,7 +336,7 @@ The two applications are independently runnable and independently deployable.
 The Enrollment Service validates Course existence through the Course API before persisting an enrollment.
 
 ```text
-POST /enrollments
+POST /api/v1/enrollments or /api/v2/enrollments
         │
         ▼
 Enrollment Service
@@ -383,9 +390,16 @@ The Enrollment Service now has its own:
 Current Enrollment API:
 
 ```text
-POST /enrollments
-GET  /enrollments
+V1 — supported, deprecated
+GET  /api/v1/enrollments
+POST /api/v1/enrollments
+
+V2 — current contract
+GET  /api/v2/enrollments
+POST /api/v2/enrollments
 ```
+
+V1 keeps the original flat request field `studentName`. V2 intentionally introduces a breaking HTTP representation with nested `student.name`; both are translated into the same application command and domain model.
 
 ---
 
@@ -593,11 +607,10 @@ Pure unit tests validate the domain model, both application services, and both o
 The **Create Enrollment** use case is now wired end-to-end through the Hexagonal architecture:
 
 ```text
-POST /enrollments
-      ↓
-EnrollmentController
-      ↓
-CreateEnrollmentUseCase
+POST /api/v1/enrollments ─→ EnrollmentController
+POST /api/v2/enrollments ─→ EnrollmentV2Controller
+                              ↓
+                    CreateEnrollmentUseCase
       ↓
 CreateEnrollmentService
       ├── CourseExistsPort
@@ -620,11 +633,10 @@ The REST adapter now maps the created domain object to `EnrollmentResponse`, inc
 The read side is now also migrated end-to-end:
 
 ```text
-GET /enrollments
-      ↓
-EnrollmentController
-      ↓
-FindEnrollmentsUseCase
+GET /api/v1/enrollments ─→ EnrollmentController
+GET /api/v2/enrollments ─→ EnrollmentV2Controller
+                            ↓
+                  FindEnrollmentsUseCase
       ↓
 FindEnrollmentsService
       ↓
@@ -668,55 +680,67 @@ adapters    → domain            YES
 
 Spring wiring is intentionally kept in `EnrollmentApplicationConfiguration`, which acts as the composition root.
 
-The REST boundary is now also contract-first:
+The REST boundary is contract-first and now versioned:
 
 ```text
 openapi/enrollment-api.yaml
         ↓
 OpenAPI Generator
         ↓
-generated EnrollmentsApi
-generated EnrollmentRequest
-generated EnrollmentResponse
-generated ErrorResponse
-        ↓
-EnrollmentController
-        ↓
-application use cases
-        ↓
-domain
+        ├── EnrollmentsApi
+        │      └── /api/v1/enrollments
+        │
+        ├── EnrollmentsV2Api
+        │      └── /api/v2/enrollments
+        │
+        ├── EnrollmentRequest
+        ├── EnrollmentV2Request
+        ├── StudentV2
+        ├── EnrollmentResponse
+        └── ErrorResponse
+                ↓
+        REST inbound adapters
+                ↓
+        application use cases
+                ↓
+              domain
 ```
 
-The OpenAPI contract defines both operations and their important response behavior, including the security boundary:
+The two request contracts deliberately differ:
 
 ```text
-GET /enrollments
-├── 200 → EnrollmentResponse[]
-├── 401 → Unauthorized
-└── 403 → Forbidden
+V1
+{
+  "courseId": 10,
+  "studentName": "Rubén"
+}
 
-POST /enrollments
-├── 201 → EnrollmentResponse
-├── 400 → ErrorResponse
-├── 401 → Unauthorized
-├── 403 → Forbidden
-├── 404 → ErrorResponse
-└── 503 → ErrorResponse
+V2
+{
+  "courseId": 10,
+  "student": {
+    "name": "Rubén"
+  }
+}
 ```
 
-The contract now defines an HTTP Bearer scheme with `bearerFormat: JWT`, and both GET and POST declare `bearerAuth` as an operation security requirement. The concrete role rules remain runtime concerns in Spring Security: GET allows USER or ADMIN, while POST requires ADMIN.
+Both controllers translate their generated HTTP models into the same `CreateEnrollmentCommand`. The application and domain layers therefore remain independent of API versions.
 
-Maven validates the specification during the build. A deliberately broken OpenAPI version was tested and correctly failed the build. The same contract generates the HTTP request/response/error models and the `EnrollmentsApi` interface. The OpenAPI YAML is therefore a real build input and must also be copied into the Enrollment Service Docker builder before Maven runs.
+OpenAPI tags are used with OpenAPI Generator `useTags=true`, keeping the generated interfaces semantically named as `EnrollmentsApi` and `EnrollmentsV2Api` instead of deriving unstable names from the `/api/...` path prefix.
 
-The generated request model carries Bean Validation constraints derived from the contract, such as `@Min(1)` for `courseId`. `EnrollmentController` implements the generated interface, so the HTTP mappings are now generated from the OpenAPI source of truth rather than duplicated manually in the controller.
+V1 is still available for existing consumers but is marked `deprecated: true` in the OpenAPI contract. Successful V1 responses expose a `Deprecation` header; V2 responses do not. The old unversioned `/enrollments` route is no longer mapped and is verified as `404` with an authenticated request.
 
-The generated contract remains at the REST boundary:
+Spring Security protects both versions with the same business authorization policy: GET allows USER or ADMIN, while POST requires ADMIN.
+
+Maven validates and generates the contract during the build. The generated contract remains at the REST boundary:
 
 ```text
 generated API classes → adapter/in/rest
 application           → no OpenAPI dependency
 domain                → no OpenAPI dependency
 ```
+
+Detailed API-versioning notes: [API_VERSIONING.md](docs/API_VERSIONING.md).
 
 Detailed notes: [DDD.md](docs/DDD.md)
 
@@ -829,13 +853,13 @@ EnrollmentController
 Verified behavior includes the complete runtime matrix:
 
 ```text
-GET  + no token     → 401
-GET  + ruben/USER   → 200
-GET  + admin/ADMIN  → 200
+GET  /api/v1|v2/enrollments + no token     → 401
+GET  /api/v1|v2/enrollments + ruben/USER   → 200
+GET  /api/v1|v2/enrollments + admin/ADMIN  → 200
 
-POST + no token     → 401
-POST + ruben/USER   → 403
-POST + admin/ADMIN  → 201
+POST /api/v1|v2/enrollments + no token     → 401
+POST /api/v1|v2/enrollments + ruben/USER   → 403
+POST /api/v1|v2/enrollments + admin/ADMIN  → 201
 ```
 
 The OpenAPI security contract is now aligned with the runtime model:
@@ -895,20 +919,23 @@ Mongo persistence
 └── Mongo → Domain rehydration
 
 REST MVC / security
-├── @WebMvcTest
+├── @WebMvcTest for V1 and V2 controllers
 ├── MockMvc
 ├── @MockitoBean
 ├── real SecurityConfiguration
 ├── mock JWT authentication
 ├── GET: 401 / USER 200 / ADMIN 200
 ├── POST: 401 / USER 403 / ADMIN 201
-├── request / response mapping
+├── V1 flat request → CreateEnrollmentCommand
+├── V2 nested request → same CreateEnrollmentCommand
+├── V1 Deprecation header / V2 no Deprecation header
+├── old unversioned /enrollments → 404
 └── generated Bean Validation → 400
 
 Full application HTTP integration
 ├── @SpringBootTest
 ├── @AutoConfigureMockMvc
-├── real Enrollment controller
+├── real V1 / V2 Enrollment controllers
 ├── real application services
 ├── real MongoEnrollmentAdapter
 ├── real EnrollmentRepository
@@ -916,7 +943,9 @@ Full application HTTP integration
 ├── mocked JwtDecoder / external identity boundary
 ├── mocked CourseRestAdapter / external Course Service boundary
 ├── GET persisted data → 200 JSON
-├── POST existing Course → 201 + persisted document
+├── V1 POST → 201 + persisted document
+├── V2 nested POST → same application/domain → 201 + persisted document
+├── old unversioned endpoint → 404
 └── POST missing Course → 404 + MongoDB unchanged
 ```
 
@@ -928,7 +957,7 @@ Detailed theory and examples: [TESTING.md](docs/TESTING.md)
 
 # 📈 Observability
 
-The current **Advanced Backend Engineering** phase is focused on making the two services observable through correlated metrics, traces and logs.
+The planned **Observability** milestone is complete: the two services are observable through correlated metrics, traces and logs.
 
 The local metrics flow is:
 
