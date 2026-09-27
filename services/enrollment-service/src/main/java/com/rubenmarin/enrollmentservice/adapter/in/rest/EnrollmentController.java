@@ -22,6 +22,8 @@ public class EnrollmentController implements EnrollmentsApi {
 
     private final CreateEnrollmentUseCase createEnrollmentUseCase;
     private final FindEnrollmentsUseCase findEnrollmentsUseCase;
+    private static final String DEPRECATION =
+            "@" + java.time.Instant.parse("2026-09-27T00:00:00Z").getEpochSecond();
 
     public EnrollmentController(CreateEnrollmentUseCase createEnrollmentUseCase,
                                 FindEnrollmentsUseCase findEnrollmentsUseCase
@@ -43,6 +45,7 @@ public class EnrollmentController implements EnrollmentsApi {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
+                .header("Deprecation", DEPRECATION)
                 .body(toEnrollmentResponse(created));
     }
 
@@ -55,7 +58,11 @@ public class EnrollmentController implements EnrollmentsApi {
                 .map(this::toEnrollmentResponse)
                 .toList();
 
-        return ResponseEntity.ok(response);
+        //return ResponseEntity.ok(response);
+        return ResponseEntity
+                .ok()
+                .header("Deprecation", DEPRECATION)
+                .body(response);
     }
 
     private EnrollmentResponse toEnrollmentResponse(Enrollment enrollment) {

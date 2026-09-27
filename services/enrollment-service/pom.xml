@@ -224,6 +224,8 @@
                                 <interfaceOnly>true</interfaceOnly>
                                 <!-- Do not generate default method implementations inside the API interface. -->
                                 <skipDefaultInterface>true</skipDefaultInterface>
+                                <!-- tag = Enrollments -->  EnrollmentsApi.java -->
+                                <useTags>true</useTags>
                             </configOptions>
                         </configuration>
                     </execution>

@@ -2,6 +2,8 @@ package com.rubenmarin.enrollmentservice;
 
 
 import com.rubenmarin.enrollmentservice.adapter.out.course.rest.CourseRestAdapter;
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsApi;
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsV2Api;
 import com.rubenmarin.enrollmentservice.document.EnrollmentDocument;
 import com.rubenmarin.enrollmentservice.domain.model.CourseId;
 import com.rubenmarin.enrollmentservice.domain.model.EnrollmentStatus;
@@ -110,7 +112,8 @@ class EnrollmentHttpIntegrationTest {
     void cleanDatabase() {
         enrollmentRepository.deleteAll();
     }
-//    GET HTTP → Controller → Application → MongoDB → HTTP ✅
+
+    //    GET HTTP → Controller → Application → MongoDB → HTTP ✅
 //    GET HTTP request
 //          ↓
 //    SecurityFilterChain
@@ -146,7 +149,7 @@ class EnrollmentHttpIntegrationTest {
 
         // Act + Assert
         mockMvc.perform(
-                        MockMvcRequestBuilders.get("/enrollments")
+                        MockMvcRequestBuilders.get(EnrollmentsApi.PATH_GET_ENROLLMENTS)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt().authorities(
                                                 new SimpleGrantedAuthority("ROLE_USER")
@@ -160,7 +163,7 @@ class EnrollmentHttpIntegrationTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].status").value("PENDING"));
     }
 
-//  POST HTTP → Security → Controller → Application → MongoDB → HTTP ✅
+    //  POST HTTP → Security → Controller → Application → MongoDB → HTTP ✅
 //  POST HTTP
 //      ↓
 //  Security
@@ -187,7 +190,7 @@ class EnrollmentHttpIntegrationTest {
 
         // Act + Assert:
         mockMvc.perform(
-                        MockMvcRequestBuilders.post("/enrollments")
+                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(
@@ -250,7 +253,7 @@ class EnrollmentHttpIntegrationTest {
         Mockito.when(courseRestAdapter.existsById(new CourseId(999L))).thenReturn(false);
 
         mockMvc.perform(
-                        MockMvcRequestBuilders.post("/enrollments")
+                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(
@@ -271,4 +274,70 @@ class EnrollmentHttpIntegrationTest {
 
         Assertions.assertEquals(0, enrollmentRepository.count());
     }
+
+    @Test
+    void shouldReturn404ForOldUnversionedEndpoint() throws Exception {
+
+        mockMvc.perform(
+                        MockMvcRequestBuilders.get("/enrollments")
+                                .with(
+                                        SecurityMockMvcRequestPostProcessors.jwt()
+                                                .authorities(
+                                                        new SimpleGrantedAuthority("ROLE_USER")
+                                                )
+                                )
+                )
+                .andExpect(MockMvcResultMatchers.status().isNotFound());
+    }
+
+    @Test
+    void shouldCreateEnrollmentThroughFullApplicationUsingV2Contract() throws Exception {
+
+        // External Course Service confirms that Course 10 exists.
+        Mockito.when(courseRestAdapter.existsById(new CourseId(10L))).thenReturn(true);
+
+        mockMvc.perform(
+                        MockMvcRequestBuilders.post(
+                                        EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2
+                                )
+                                .with(
+                                        SecurityMockMvcRequestPostProcessors.jwt()
+                                                .authorities(
+                                                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                                                )
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "courseId": 10,
+                                          "student": {
+                                            "name": "Rubén"
+                                          }
+                                        }
+                                        """)
+                )
+                .andExpect(MockMvcResultMatchers.status().isCreated())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.id").isNotEmpty())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.courseId").value(10))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.studentName").value("Rubén"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("PENDING"));
+
+        Mockito.verify(courseRestAdapter)
+                .existsById(new CourseId(10L));
+
+        List<EnrollmentDocument> persisted =
+                enrollmentRepository.findAll();
+
+        Assertions.assertEquals(1, persisted.size());
+
+        EnrollmentDocument saved = persisted.getFirst();
+
+        Assertions.assertEquals(10L, saved.getCourseId());
+        Assertions.assertEquals("Rubén", saved.getStudentName());
+        Assertions.assertEquals(
+                EnrollmentStatus.PENDING.name(),
+                saved.getStatus()
+        );
+    }
+
 }

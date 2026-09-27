@@ -5,6 +5,8 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsApi;
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsV2Api;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -38,11 +40,19 @@ public class SecurityConfiguration {
                         ).permitAll()
 
                         // USER and ADMIN may read enrollments.
-                        .requestMatchers(HttpMethod.GET, "/enrollments")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                EnrollmentsApi.PATH_GET_ENROLLMENTS,
+                                EnrollmentsV2Api.PATH_GET_ENROLLMENTS_V2
+                        )
                         .hasAnyRole("USER", "ADMIN")
 
                         // Only ADMIN may create enrollments.
-                        .requestMatchers(HttpMethod.POST, "/enrollments")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                EnrollmentsApi.PATH_CREATE_ENROLLMENT,
+                                EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2
+                        )
                         .hasRole("ADMIN")
 
                         .anyRequest().authenticated()

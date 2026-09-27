@@ -1,6 +1,6 @@
 package com.rubenmarin.enrollmentservice.adapter.in.rest;
 
-import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsApi;
+import com.rubenmarin.enrollmentservice.api.generated.api.EnrollmentsV2Api;
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentCommand;
 import com.rubenmarin.enrollmentservice.application.port.in.CreateEnrollmentUseCase;
 import com.rubenmarin.enrollmentservice.application.port.in.FindEnrollmentsUseCase;
@@ -9,10 +9,8 @@ import com.rubenmarin.enrollmentservice.domain.model.CourseId;
 import com.rubenmarin.enrollmentservice.domain.model.Enrollment;
 import com.rubenmarin.enrollmentservice.domain.model.EnrollmentId;
 import com.rubenmarin.enrollmentservice.domain.model.StudentName;
-
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,9 +31,9 @@ import java.util.List;
 // Pure Mockito unit test → @Mock + @InjectMocks
 // Spring test → @MockitoBean for mocked Spring dependencies
 
-@WebMvcTest(EnrollmentController.class)
+@WebMvcTest(EnrollmentV2Controller.class)
 @Import(SecurityConfiguration.class)
-class EnrollmentControllerTest {
+class EnrollmentV2ControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -54,7 +52,7 @@ class EnrollmentControllerTest {
     void shouldReturn401WhenGetEnrollmentsWithoutAuthentication() throws Exception {
         // The request should be rejected before the controller/use case is reached.
         mockMvc.perform(
-                        MockMvcRequestBuilders.get(EnrollmentsApi.PATH_GET_ENROLLMENTS)
+                        MockMvcRequestBuilders.get(EnrollmentsV2Api.PATH_GET_ENROLLMENTS_V2)
                 )
                 .andExpect(MockMvcResultMatchers.status().isUnauthorized());
 
@@ -75,7 +73,7 @@ class EnrollmentControllerTest {
 
         // Act + Assert
         mockMvc.perform(
-                        MockMvcRequestBuilders.get(EnrollmentsApi.PATH_GET_ENROLLMENTS)
+                        MockMvcRequestBuilders.get(EnrollmentsV2Api.PATH_GET_ENROLLMENTS_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(new SimpleGrantedAuthority("ROLE_USER")
@@ -87,7 +85,7 @@ class EnrollmentControllerTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].courseId").value(10))
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].studentName").value("Rubén"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].status").value("PENDING"))
-                .andExpect(MockMvcResultMatchers.header().exists("Deprecation"));
+                .andExpect(MockMvcResultMatchers.header().doesNotExist("Deprecation"));
 
         Mockito.verify(findEnrollmentsUseCase).findAll();
     }
@@ -107,7 +105,7 @@ class EnrollmentControllerTest {
 
         // Act + Assert
         mockMvc.perform(
-                        MockMvcRequestBuilders.get(EnrollmentsApi.PATH_GET_ENROLLMENTS)
+                        MockMvcRequestBuilders.get(EnrollmentsV2Api.PATH_GET_ENROLLMENTS_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN")
@@ -119,34 +117,24 @@ class EnrollmentControllerTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].courseId").value(10))
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].studentName").value("Rubén"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$[0].status").value("PENDING"))
-                .andExpect(MockMvcResultMatchers.header().exists("Deprecation"));
+                .andExpect(MockMvcResultMatchers.header().doesNotExist("Deprecation"));
+
 
         Mockito.verify(findEnrollmentsUseCase).findAll();
     }
-
-//    One architectural nuance worth understanding: because we currently add Deprecation inside the V1 controller,
-//    successful controller responses get it, but requests rejected earlier by Security (401/403)
-//    or potentially some validation/error flows won't necessarily get that header.
-//
-//    For this learning milestone that's perfectly adequate. In a more production-oriented implementation,
-//    we'd usually centralize it with a filter/interceptor so:
-//
-//    ANY response from /api/v1/**
-//              ↓
-//      Deprecation header
-//
-//  rather than duplicating it in controller methods.
 
     @Test
     void shouldReturn401WhenCreatingEnrollmentWithoutAuthentication() throws Exception {
 
         mockMvc.perform(
-                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
+                        MockMvcRequestBuilders.post(EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
                                           "courseId": 10,
-                                          "studentName": "Rubén"
+                                          "student": {
+                                              "name": "Rubén"
+                                            }
                                         }
                                         """)
                 )
@@ -161,7 +149,7 @@ class EnrollmentControllerTest {
     void shouldReturn403WhenCreatingEnrollmentWithAuthenticatedUser() throws Exception {
 
         mockMvc.perform(
-                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
+                        MockMvcRequestBuilders.post(EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(new SimpleGrantedAuthority("ROLE_USER")
@@ -171,7 +159,9 @@ class EnrollmentControllerTest {
                                 .content("""
                                         {
                                           "courseId": 10,
-                                          "studentName": "Rubén"
+                                          "student": {
+                                              "name": "Rubén"
+                                            }
                                         }
                                         """)
                 )
@@ -201,7 +191,7 @@ class EnrollmentControllerTest {
 
 
         mockMvc.perform(
-                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
+                        MockMvcRequestBuilders.post(EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN")
@@ -211,7 +201,9 @@ class EnrollmentControllerTest {
                                 .content("""
                                         {
                                           "courseId": 10,
-                                          "studentName": "Rubén"
+                                           "student": {
+                                              "name": "Rubén"
+                                            }
                                         }
                                         """)
                 )
@@ -220,12 +212,11 @@ class EnrollmentControllerTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.courseId").value(10))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.studentName").value("Rubén"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("PENDING"))
-                .andExpect(MockMvcResultMatchers.header().exists("Deprecation"));
-
+                .andExpect(MockMvcResultMatchers.header().doesNotExist("Deprecation"));
 
         //  prove that the controller correctly converted
-        //  JSON {"courseId": 10,"studentName": "Rubén"}
-        //  into new CreateEnrollmentCommand(10L, "Rubén")
+        // V2 JSON {"courseId":10,"student":{"name":"Rubén"}}
+        // → CreateEnrollmentCommand(10L, "Rubén")
 
         // ArgumentCaptor lets Mockito capture the actual argument that
         // was passed into a mocked method, so you can inspect it afterward.
@@ -243,7 +234,7 @@ class EnrollmentControllerTest {
     @Test
     void shouldReturn400WhenCourseIdIsInvalid() throws Exception {
         mockMvc.perform(
-                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
+                        MockMvcRequestBuilders.post(EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(
@@ -254,7 +245,9 @@ class EnrollmentControllerTest {
                                 .content("""
                                         {
                                           "courseId": 0,
-                                          "studentName": "Rubén"
+                                          "student": {
+                                              "name": "Rubén"
+                                            }
                                         }
                                         """)
                 )
@@ -267,7 +260,7 @@ class EnrollmentControllerTest {
     @Test
     void shouldReturn400WhenStudentNameIsBlank() throws Exception {
         mockMvc.perform(
-                        MockMvcRequestBuilders.post(EnrollmentsApi.PATH_CREATE_ENROLLMENT)
+                        MockMvcRequestBuilders.post(EnrollmentsV2Api.PATH_CREATE_ENROLLMENT_V2)
                                 .with(
                                         SecurityMockMvcRequestPostProcessors.jwt()
                                                 .authorities(
@@ -278,7 +271,9 @@ class EnrollmentControllerTest {
                                 .content("""
                                         {
                                           "courseId": 10,
-                                          "studentName": ""
+                                          "student": {
+                                              "name": ""
+                                            }
                                         }
                                         """)
                 )
