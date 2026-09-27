@@ -592,10 +592,25 @@ Current testing documentation: [TESTING.md](TESTING.md).
 
 Detailed notes: [API_VERSIONING.md](API_VERSIONING.md).
 
+## Version-Aware Observability — ✅ COMPLETE
+
+- [x] Micrometer URI labels verified for `/api/v1/enrollments` and `/api/v2/enrollments`
+- [x] Enrollment traffic dashboard updated to aggregate V1 + V2
+- [x] API Version Traffic panel added with per-version traffic visibility
+- [x] 5xx error-rate panel updated for V1 + V2
+- [x] p50 / p95 / p99 latency panels updated for V1 + V2
+- [x] Availability SLI scoped to the versioned Enrollment API
+- [x] Latency SLI scoped to the versioned Enrollment API
+- [x] Error-budget consumed / remaining queries aligned with the API SLO population
+- [x] 5m / 1h / 30m / 6h burn-rate queries aligned with the API SLO population
+- [x] Fast-burn alert updated for versioned API routes
+- [x] Slow-burn alert updated for versioned API routes
+- [x] Actuator traffic excluded from Enrollment API SLO calculations
+- [x] Deprecated V1 traffic can now be tracked independently from V2 adoption
+
 ## Remaining Advanced Backend Engineering
 
-- [ ] Version-aware observability refresh — ⏳ NEXT
-- [ ] Performance
+- [ ] Performance — ⏳ NEXT
 - [ ] Scalability
 - [ ] System design
 
@@ -801,9 +816,13 @@ V1 / V2 coexistence             ✅
         ↓
 V1 deprecation                  ✅
         ↓
-Version-aware observability     ⏳ NEXT
+Version-aware observability     ✅
+        ↓
+Performance                     ⏳ NEXT
         ↓
 Advanced Backend Engineering    🚧 CURRENT
+        ↓
+Scalability                     ⏳
         ↓
 System Design                   ⏳
 ```
