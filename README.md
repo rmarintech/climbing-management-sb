@@ -2,7 +2,7 @@
 
 A backend system built with Java 21 and Spring Boot for managing climbing courses and enrollments.
 
-The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, API versioning, OAuth2/JWT security, observability with Micrometer, Prometheus, Grafana, OpenTelemetry, Tempo and Loki, and modern deployment practices.
+The project is designed as a practical Senior Backend Java portfolio project, demonstrating modern enterprise backend development, REST APIs, persistence, transaction management, concurrency control, relational and NoSQL databases, containerization, CI/CD, Kubernetes, Helm, microservices, distributed-system resilience, Apache Kafka, event-driven architecture, DDD, Hexagonal Architecture, API-first development, API versioning, OAuth2/JWT security, observability with Micrometer, Prometheus, Grafana, OpenTelemetry, Tempo and Loki, performance engineering with k6 and Java Flight Recorder, and modern deployment practices.
 
 The application has been developed incrementally, introducing technologies and architectural patterns commonly used in enterprise Java applications.
 
@@ -73,6 +73,8 @@ The project has evolved from a single Spring Boot backend into a small microserv
 * JUnit 5
 * Mockito
 * Testcontainers
+* k6
+* Java Flight Recorder (JFR) / `jcmd`
 
 ---
 
@@ -98,6 +100,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Testing, Mockito, integration tests and Testcontainers | [TESTING.md](docs/TESTING.md) |
 | Observability, Prometheus, Grafana, OpenTelemetry, Tempo, structured logs, Alloy and Loki | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | API versioning, compatibility and deprecation | [API_VERSIONING.md](docs/API_VERSIONING.md) |
+| Performance, k6 load/stress testing, capacity and JFR profiling | [PERFORMANCE.md](docs/PERFORMANCE.md) |
 
 ---
 
@@ -278,16 +281,28 @@ V1 / V2 coexistence              ✅
         ↓
 V1 deprecation                   ✅
         ↓
-Version-aware observability      ⏳ NEXT
+Version-aware observability      ✅
+        ↓
+k6 baseline / load tests         ✅
+        ↓
+Stress / arrival-rate testing    ✅
+        ↓
+Saturation / capacity analysis   ✅
+        ↓
+JFR profiling workflow           ✅
+        ↓
+Performance                      ✅
         ↓
 Advanced Backend Engineering    🚧 CURRENT
+        ↓
+Scalability                      ⏳ NEXT
         ↓
 System Design                   ⏳
 ```
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing, Observability and API Versioning milestones are complete** for the planned course scope. The Enrollment API now exposes coexisting `/api/v1/enrollments` and `/api/v2/enrollments` contracts while both versions reuse the same application use cases and domain model. V1 remains supported but is deprecated; V2 demonstrates a breaking HTTP request-shape change without leaking API-version concerns into the domain. The immediate next step is a **version-aware observability refresh** so Prometheus/Grafana URI filters follow the new routes before moving into performance work.
+The **Testing, Observability, API Versioning, Version-Aware Observability and Performance milestones are complete** for the planned course scope. The Enrollment API exposes coexisting `/api/v1/enrollments` and `/api/v2/enrollments` contracts while both versions reuse the same application use cases and domain model. Performance work added k6 baseline, load, stress and constant-arrival-rate experiments, SLO-based capacity analysis, observability-overhead testing and a Java Flight Recorder profiling workflow. The next phase is **Scalability**.
 
 ---
 
@@ -1137,7 +1152,51 @@ Enrollment logs now use Spring Boot Logstash JSON plus SLF4J key/value fields. A
 
 The observability phase also defines a `99%` availability SLO, a `95% ≤ 500 ms` latency objective backed by an explicit `500ms` histogram bucket, error-budget and burn-rate panels, fast/slow multi-window burn alerts, and a verified Grafana webhook notification path.
 
+The observability queries are also version-aware: Enrollment traffic, 5xx, p50 / p95 / p99, SLOs, error budgets and burn-rate alerts cover both `/api/v1/enrollments` and `/api/v2/enrollments`, while a dedicated API Version Traffic panel makes V1 deprecation/adoption visible and Actuator traffic is excluded from the API SLO population.
+
 Detailed theory, configuration, PromQL, tracing, centralized logging, SLOs and alerting: [OBSERVABILITY.md](docs/OBSERVABILITY.md)
+
+---
+
+# ⚡ Performance
+
+The planned **Performance** milestone is complete for the current course scope. The Enrollment Service was tested with k6 using both closed and open workload models, while Prometheus and Grafana were used to correlate traffic, latency and JVM behavior.
+
+The working method used throughout the phase was:
+
+```text
+Measure
+   ↓
+Find the bottleneck or saturation signal
+   ↓
+Change ONE variable
+   ↓
+Measure again
+```
+
+The exercises covered baseline latency, throughput, concurrency, p90 / p95 / p99 tail latency, stress testing, arrival-rate testing, saturation, load-generator limits, tracing overhead and JVM profiling with Java Flight Recorder.
+
+A representative local capacity experiment used the existing latency objective of `p95 < 500 ms`. Around the 500–600 req/s offered-load region, throughput stopped scaling cleanly while tail latency rose sharply. At 600 req/s offered load, the run reached the configured VU ceiling, dropped iterations and exceeded the latency objective, demonstrating saturation. These are **local learning measurements**, not production-capacity claims, because k6, the JVM, Docker Desktop and supporting services share the same development machine.
+
+The phase also exposed observability cost. With 100% tracing, the OpenTelemetry `BatchSpanProcessor` queue reached its `maxQueueSize=2048` limit and dropped spans. A controlled tracing experiment showed measurable overhead, after which `0.1` sampling was used as the more realistic local configuration for later tests.
+
+The profiling workflow used:
+
+```text
+jcmd -l
+    ↓
+identify Enrollment Service PID
+    ↓
+jcmd <pid> JFR.start ...
+    ↓
+run the k6 workload
+    ↓
+inspect CPU / threads / GC / allocations / I/O
+```
+
+A JFR recording was captured while a degraded 300 req/s workload was reproduced, establishing the workflow for future bottleneck analysis without introducing speculative tuning.
+
+Detailed theory, commands, k6 examples, benchmark results and interpretation: [PERFORMANCE.md](docs/PERFORMANCE.md)
 
 ---
 
@@ -1356,6 +1415,10 @@ The project is intended to demonstrate and reinforce the skills expected from a 
 * Structured JSON logging
 * Grafana Alloy and Loki centralized logs
 * Bidirectional logs ↔ traces correlation
+* Performance engineering
+* k6 load, stress and constant-arrival-rate testing
+* Latency percentiles, throughput, saturation and SLO-based capacity analysis
+* Java Flight Recorder profiling workflow
 * Scalability
 * System design
 
@@ -1370,4 +1433,4 @@ Backend Java Developer
 Technologies, architecture patterns and practices explored in this project include:
 
 
-`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `Micrometer` · `OpenTelemetry` · `Prometheus` · `PromQL` · `Grafana` · `Tempo` · `Loki` · `Grafana Alloy` · `DataMongoTest`
+`Java 21` · `Spring Boot 4.1` · `Spring Web` · `RestClient` · `Spring Boot Actuator` · `Jakarta Bean Validation` · `Spring Data JPA` · `Hibernate` · `PostgreSQL` · `Spring Data MongoDB` · `MongoDB` · `MongoTemplate` · `Spring Cloud Circuit Breaker` · `Spring Kafka` · `Apache Kafka` · `KRaft` · `Docker` · `Docker Compose` · `Trivy` · `GitHub Actions` · `GitHub Container Registry (GHCR)` · `Kubernetes` · `Helm` · `Microservices` · `Event-Driven Architecture` · `DDD` · `Bounded Contexts` · `Context Mapping` · `Hexagonal Architecture` · `Ports and Adapters` · `Clean Architecture` · `API-first` · `OpenAPI 3.0.3` · `OpenAPI Generator 7.15.0` · `Spring Security` · `OAuth2 Resource Server` · `OpenID Connect` · `JWT` · `Keycloak` · `RBAC` · `JUnit 5` · `Mockito` · `Testcontainers` · `Micrometer` · `OpenTelemetry` · `Prometheus` · `PromQL` · `Grafana` · `Tempo` · `Loki` · `Grafana Alloy` · `DataMongoTest` · `k6` · `Java Flight Recorder (JFR)`

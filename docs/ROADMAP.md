@@ -608,10 +608,58 @@ Detailed notes: [API_VERSIONING.md](API_VERSIONING.md).
 - [x] Actuator traffic excluded from Enrollment API SLO calculations
 - [x] Deprecated V1 traffic can now be tracked independently from V2 adoption
 
+## Performance — ✅ COMPLETE
+
+- [x] Performance fundamentals
+  - [x] Latency, throughput, concurrency, resource utilization and saturation
+  - [x] Average vs p90 / p95 / p99 tail latency
+  - [x] Throughput vs successful throughput
+  - [x] Capacity knee and saturation behavior
+- [x] k6 load testing
+  - [x] Baseline test with 1 VU
+  - [x] Constant-VU tests with 5, 10, 20 and 50 VUs
+  - [x] Repeated runs and JVM warm-up effects
+  - [x] Thresholds for `http_req_failed` and p95 latency
+  - [x] Valid JWT requirement during authenticated benchmarks
+- [x] Observability-overhead experiment
+  - [x] OpenTelemetry `BatchSpanProcessor` queue saturation observed at 100% tracing
+  - [x] Controlled tracing ON / OFF comparison
+  - [x] Tracing shown to add measurable overhead under load
+  - [x] Realistic `0.1` tracing sampling selected for subsequent local tests
+- [x] Stress testing
+  - [x] Staged ramp from 5 to 50 VUs
+  - [x] Throughput / latency curve interpreted through Grafana
+  - [x] Service remained error-free during the staged 50-VU ramp
+- [x] Closed vs open workload models
+  - [x] Constant-VU closed model
+  - [x] `constant-arrival-rate` open model
+  - [x] `preAllocatedVUs` / `maxVUs` behavior
+  - [x] `dropped_iterations` interpretation
+  - [x] Little's Law used to relate throughput, latency and concurrency
+- [x] Arrival-rate capacity experiments
+  - [x] 300 req/s reference load
+  - [x] 400 req/s load
+  - [x] 500 req/s load
+  - [x] 600 req/s saturation test
+  - [x] Boundary experiment around 525 req/s
+  - [x] p95 `< 500 ms` SLO used as a practical capacity criterion
+- [x] Benchmark-quality lessons
+  - [x] Failed requests can look deceptively fast
+  - [x] Load-generator capacity distinguished from application capacity
+  - [x] Local-machine contention recognized as a benchmark limitation
+  - [x] Cooldown / recovery checks before comparing runs
+  - [x] No production-capacity claim made from local benchmark numbers
+- [x] JVM profiling workflow
+  - [x] Enrollment JVM identified with `jcmd -l`
+  - [x] Java Flight Recorder started with `JFR.start`
+  - [x] JFR capture taken while the degraded 300 req/s workload was reproduced
+  - [x] CPU / thread / GC / allocation / I/O profiling workflow introduced
+
+Detailed notes: [PERFORMANCE.md](PERFORMANCE.md).
+
 ## Remaining Advanced Backend Engineering
 
-- [ ] Performance — ⏳ NEXT
-- [ ] Scalability
+- [ ] Scalability — ⏳ NEXT
 - [ ] System design
 
 ---
@@ -818,11 +866,11 @@ V1 deprecation                  ✅
         ↓
 Version-aware observability     ✅
         ↓
-Performance                     ⏳ NEXT
+Performance                     ✅
         ↓
 Advanced Backend Engineering    🚧 CURRENT
         ↓
-Scalability                     ⏳
+Scalability                     ⏳ NEXT
         ↓
 System Design                   ⏳
 ```
