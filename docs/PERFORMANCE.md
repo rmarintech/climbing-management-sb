@@ -600,9 +600,9 @@ The course stops here for deep profiling for now; the JFR workflow is establishe
 
 # 15. Next phase
 
-The next phase is **Scalability**.
+Performance is complete for the current course scope and the project has now entered **Scalability**.
 
-The question changes from:
+The question changed from:
 
 ```text
 How fast is one service instance?
@@ -614,7 +614,11 @@ to:
 How does the architecture handle more load by adding capacity?
 ```
 
-That leads into stateless services, multiple replicas, Kubernetes load balancing, HPA behavior, resource requests / limits, database bottlenecks, Kafka consumer scaling, backpressure and caching.
+The Scalability phase has already verified stateless Enrollment replicas, Kubernetes Service failover, Deployment / ReplicaSet self-healing, resource requests / limits, Metrics Server and HPA-driven automatic scaling.
+
+The remaining scalability topics move beyond adding application Pods and focus on the next shared constraints: MongoDB / connection pools, Kafka partition-limited consumer parallelism, backpressure, caching and bottleneck propagation.
+
+Continue in: [SCALABILITY.md](SCALABILITY.md).
 
 ---
 

@@ -657,9 +657,51 @@ Detailed notes: [API_VERSIONING.md](API_VERSIONING.md).
 
 Detailed notes: [PERFORMANCE.md](PERFORMANCE.md).
 
+## Scalability — 🚧 CURRENT
+
+- [x] Scalability fundamentals
+  - [x] Vertical vs horizontal scaling
+  - [x] Stateless-service requirement for horizontal scaling
+  - [x] Shared dependency as a system-level scaling constraint
+- [x] Kubernetes horizontal scaling
+  - [x] Enrollment Service scaled from 1 to 3 replicas
+  - [x] Kubernetes Service distributes traffic across Ready Pods
+  - [x] EndpointSlices used to inspect Service backends
+  - [x] Pod deletion / failover experiment
+  - [x] Deployment / ReplicaSet self-healing verified
+- [x] Kubernetes resource management
+  - [x] Enrollment CPU request: `100m`
+  - [x] Enrollment memory request: `384Mi`
+  - [x] Enrollment CPU limit: `500m`
+  - [x] Enrollment memory limit: `512Mi`
+  - [x] Resource configuration persisted in Deployment YAML
+- [x] Horizontal Pod Autoscaler
+  - [x] Metrics Server CPU data verified with `kubectl top`
+  - [x] CPU utilization calculated against resource requests
+  - [x] HPA `minReplicas=2`
+  - [x] HPA `maxReplicas=5`
+  - [x] CPU target `70%`
+  - [x] Automatic scale-up verified under generated load
+  - [x] Scale-down stabilization behavior observed
+- [x] Kubernetes / local-infrastructure integration
+  - [x] Docker Compose DNS scope vs Kubernetes DNS scope
+  - [x] Dedicated Kafka listener for Kubernetes through `host.docker.internal`
+  - [x] Keycloak issuer validation separated from reachable JWK Set URI
+  - [x] MongoDB connectivity verified through Kubernetes Service / EndpointSlice
+  - [x] Over-aggressive Mongo liveness probe identified as restart cause
+  - [x] Mongo startup / readiness / liveness probes corrected
+- [ ] Database scaling / shared MongoDB bottlenecks
+- [ ] Connection-pool scalability
+- [ ] Kafka consumer scaling vs partition count
+- [ ] Backpressure
+- [ ] Caching and cache trade-offs
+- [ ] Scalability failure modes / bottleneck propagation
+
+Detailed notes: [SCALABILITY.md](SCALABILITY.md).
+
 ## Remaining Advanced Backend Engineering
 
-- [ ] Scalability — ⏳ NEXT
+- [ ] Scalability — 🚧 CURRENT
 - [ ] System design
 
 ---
@@ -868,9 +910,21 @@ Version-aware observability     ✅
         ↓
 Performance                     ✅
         ↓
-Advanced Backend Engineering    🚧 CURRENT
+Scalability fundamentals        ✅
         ↓
-Scalability                     ⏳ NEXT
+Manual horizontal scaling       ✅
+        ↓
+Service failover / self-healing ✅
+        ↓
+Resource requests / limits      ✅
+        ↓
+Metrics Server / HPA            ✅
+        ↓
+Automatic scale-up / down       ✅
+        ↓
+Scalability                     🚧 CURRENT
+        ↓
+Advanced Backend Engineering    🚧 CURRENT
         ↓
 System Design                   ⏳
 ```

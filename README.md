@@ -101,6 +101,7 @@ Detailed learning material is split by technology so examples are not duplicated
 | Observability, Prometheus, Grafana, OpenTelemetry, Tempo, structured logs, Alloy and Loki | [OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | API versioning, compatibility and deprecation | [API_VERSIONING.md](docs/API_VERSIONING.md) |
 | Performance, k6 load/stress testing, capacity and JFR profiling | [PERFORMANCE.md](docs/PERFORMANCE.md) |
+| Scalability, replicas, failover, resources, HPA and shared bottlenecks | [SCALABILITY.md](docs/SCALABILITY.md) |
 
 ---
 
@@ -293,16 +294,26 @@ JFR profiling workflow           ✅
         ↓
 Performance                      ✅
         ↓
-Advanced Backend Engineering    🚧 CURRENT
+Horizontal scaling               ✅
         ↓
-Scalability                      ⏳ NEXT
+Service failover / self-healing  ✅
         ↓
-System Design                   ⏳
+Resource requests / limits       ✅
+        ↓
+Metrics Server / HPA             ✅
+        ↓
+Automatic autoscaling            ✅
+        ↓
+Scalability                      🚧 CURRENT
+        ↓
+Advanced Backend Engineering     🚧 CURRENT
+        ↓
+System Design                    ⏳
 ```
 
 For detailed progress, **check** [ROADMAP.md](docs/ROADMAP.md).
 
-The **Testing, Observability, API Versioning, Version-Aware Observability and Performance milestones are complete** for the planned course scope. The Enrollment API exposes coexisting `/api/v1/enrollments` and `/api/v2/enrollments` contracts while both versions reuse the same application use cases and domain model. Performance work added k6 baseline, load, stress and constant-arrival-rate experiments, SLO-based capacity analysis, observability-overhead testing and a Java Flight Recorder profiling workflow. The next phase is **Scalability**.
+The **Testing, Observability, API Versioning, Version-Aware Observability and Performance milestones are complete** for the planned course scope. The Enrollment API exposes coexisting `/api/v1/enrollments` and `/api/v2/enrollments` contracts while both versions reuse the same application use cases and domain model. The current **Scalability** phase has already demonstrated multiple Enrollment replicas, Kubernetes Service failover, self-healing, explicit CPU/memory requests and limits, Metrics Server integration, and HPA scale-up / stabilized scale-down. The remaining scalability work focuses on shared-database bottlenecks, connection pools, Kafka partition limits, backpressure and caching.
 
 ---
 
@@ -1197,6 +1208,43 @@ inspect CPU / threads / GC / allocations / I/O
 A JFR recording was captured while a degraded 300 req/s workload was reproduced, establishing the workflow for future bottleneck analysis without introducing speculative tuning.
 
 Detailed theory, commands, k6 examples, benchmark results and interpretation: [PERFORMANCE.md](docs/PERFORMANCE.md)
+
+---
+
+# 📈 Scalability
+
+The **Scalability** phase is currently in progress. The first practical milestone moved the Enrollment Service from a single instance to a horizontally scalable Kubernetes workload.
+
+```text
+Client
+  ↓
+Kubernetes Service
+  ↓
+┌──────────────┬──────────────┐
+↓              ↓              ↓
+Enrollment     Enrollment     Enrollment
+Pod            Pod            Pod
+└──────────────┴──────────────┘
+        ↓
+      MongoDB
+```
+
+The completed exercises so far include multiple replicas, EndpointSlice inspection, deleting a Pod while traffic continued through the remaining Ready Pods, and verifying that the Deployment / ReplicaSet automatically restored the desired replica count.
+
+The Enrollment Deployment now also defines explicit resource requests and limits:
+
+```text
+requests: CPU 100m, memory 384Mi
+limits:   CPU 500m, memory 512Mi
+```
+
+These CPU requests provide the denominator used by the HPA. Metrics Server was verified with `kubectl top`, and the Enrollment HPA is configured with `minReplicas=2`, `maxReplicas=5` and a `70%` CPU target. Generated in-cluster HTTP load successfully caused Kubernetes to create additional Enrollment Pods automatically. After load stopped, the HPA retained extra capacity temporarily before scaling back toward the minimum, demonstrating scale-down stabilization.
+
+The phase also exposed real infrastructure integration issues. Docker Compose service names such as `kafka` exist only inside the Compose network, so Kubernetes uses a dedicated Kafka listener reachable through `host.docker.internal`. Keycloak keeps the original JWT issuer while Kubernetes uses a reachable JWK Set URI for signing-key retrieval. MongoDB instability was traced to one-second `mongosh` liveness/readiness timeouts; the probes were redesigned so startup/readiness perform real Mongo checks while liveness uses a lightweight TCP probe.
+
+The next scalability topics are shared MongoDB bottlenecks, connection pools, Kafka consumer scaling vs partition count, backpressure, caching and bottleneck propagation.
+
+Detailed theory, commands and experiments: [SCALABILITY.md](docs/SCALABILITY.md)
 
 ---
 
