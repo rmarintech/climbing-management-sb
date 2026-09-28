@@ -11,7 +11,7 @@ spec:
     matchLabels:
       app: mongo
 
-  template:                 # ← Pod definition starts here
+  template:
     metadata:
       labels:
         app: mongo
@@ -24,6 +24,19 @@ spec:
           ports:
             - containerPort: 27017
 
+          # Give Mongo enough time to start before liveness checks matter.
+          startupProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand('ping').ok"
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          # Pod receives traffic only when Mongo can actually answer.
           readinessProbe:
             exec:
               command:
@@ -31,15 +44,16 @@ spec:
                 - --quiet
                 - --eval
                 - "db.adminCommand('ping').ok"
-            initialDelaySeconds: 5
-            periodSeconds: 5
-
-          livenessProbe:
-            exec:
-              command:
-                - mongosh
-                - --quiet
-                - --eval
-                - "db.adminCommand('ping').ok"
-            initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Liveness only checks whether Mongo is still listening.
+          # Avoid repeatedly launching mongosh just to decide whether
+          # Kubernetes should kill the container.
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6

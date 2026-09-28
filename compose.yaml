@@ -170,7 +170,17 @@ services:
     container_name: kafka
 
     ports:
+      # Environment          Bootstrap address
+      # ────────────────────────────────────────────
+      # Windows              localhost:8082
+      # Docker Compose       kafka:18082
+      # Kubernetes           host.docker.internal:28082
+
+      # Windows / IntelliJ
       - "8082:8082"
+
+      # Kubernetes -> Docker Desktop host -> Kafka
+      - "28082:28082"
 
     # Windows / IntelliJ
     #       ↓
@@ -188,9 +198,9 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT_HOST://:8082,PLAINTEXT://:18082
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:8082,PLAINTEXT://kafka:18082
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,K8S:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT_HOST://:8082,PLAINTEXT://:18082,K8S://:28082
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:8082,PLAINTEXT://kafka:18082,K8S://host.docker.internal:28082
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1

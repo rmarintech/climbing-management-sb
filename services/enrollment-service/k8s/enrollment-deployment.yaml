@@ -5,13 +5,13 @@ metadata:
   name: enrollment-service
 
 spec:
-  replicas: 1
+  # HPA will control this later.
+  # Keep the initial state aligned with minReplicas.
+  replicas: 2
 
   selector:
     matchLabels:
       app: enrollment-service
-
-
 
   template:
     metadata:
@@ -23,19 +23,33 @@ spec:
       containers:
         - name: enrollment-service
 
-          #image: enrollment-service:local
           image: ghcr.io/rmarintech/climbing-management-sb-enrollment-service:latest
           imagePullPolicy: Always
-          #imagePullPolicy: IfNotPresent
 
           ports:
             - containerPort: 8081
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: docker
 
+            # Kubernetes Pod -> Docker-hosted Kafka
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: host.docker.internal:28082
+
+            # JWT issuer remains localhost in the token,
+            # but Kubernetes reaches Keycloak through the Docker host.
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+              value: http://host.docker.internal:8083/realms/climbing/protocol/openid-connect/certs
+
           envFrom:
             - configMapRef:
                 name: enrollment-service-config
-
